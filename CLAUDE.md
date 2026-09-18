@@ -112,12 +112,35 @@ the gate is three parts, never a strict per-candidate tolerance (which would
 fail constantly and train us to ignore it):
 
 1. Aggregate tolerance: |computed - reported| / reported <= 1.5%.
+   Achieved **-0.61%** for 2024, reproduced exactly by `03_hygiene.py`.
 2. Coverage floor: share of candidates within 5% must not regress below the
-   achieved 45.2%, ratcheted the way follow-the-ppp ratchets `MIN_MATCHED`.
-3. A named-outlier list carried as parametrized regression cases. Top current
-   outlier: SCALISE, STEVE (`H0LA01087`) — principal committee shows $2.07M of
-   24K/24Z against weball's $187,000 on $14.7M total receipts. **Unexplained.**
+   achieved **44.0%**, ratcheted the way follow-the-ppp ratchets `MIN_MATCHED`.
+
+   *Corrected 2026-09-17.* This previously read 45.2%, taken from the Phase 0
+   spike's "rejected alternatives" table. That figure is **not reproducible**
+   and the constant would have failed on every run. What does reproduce, to
+   the dollar, is everything else in that spike: the aggregate for the adopted
+   ccl join (-0.61% against its -0.64%), the aggregate for the
+   principal-committee variant (-0.87% against its -0.89%), the donor-CAND_ID
+   join's whole first section (40.9% within 5%, median 7.83%), and all ten
+   named outliers with identical amounts. So the join is right and the
+   aggregate is right; the spike's distribution row was computed over a
+   different candidate set than its aggregate row. The spike was explicitly
+   throwaway and is not in the repo, so the inconsistency cannot be traced
+   further. Recorded rather than normalised away.
+3. A named-outlier list carried as parametrized regression cases
+   (`tests/test_reconciliation_acceptance.py`), asserted on **membership and
+   ratio, never exact dollars** — FEC data is amended continuously and pinned
+   dollars would fail on every routine amendment. Top current outlier:
+   SCALISE, STEVE (`H0LA01087`) — principal committee shows $2.03M of 24K/24Z
+   against weball's $187,000 on $14.7M total receipts. **Unexplained.**
    Recorded rather than normalised away.
+
+Only **2024 hard-gates.** `weball26` is a mid-cycle snapshot with partial
+filing periods and small denominators; measured, 2026 lands at **+5.08%**,
+which a 1.5% tolerance would fail on every run. 2026 computes the identical
+numbers into `reports/03_hygiene.md` and never fails the build until its own
+thresholds are measured and ratcheted. See `_db.GATE_CYCLES`.
 
 ## Publishing
 

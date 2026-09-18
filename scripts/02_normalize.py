@@ -90,7 +90,7 @@ SENTINELS = [
      "the linkage file's candidate side"),
     ("pas2", "CMTE_ID", "regexp_matches(CMTE_ID, '^C[0-9]{8}$')",
      "the donating committee"),
-    ("pas2", "TRANSACTION_AMT", "transaction_amt IS NOT NULL",
+    ("pas2", "TRANSACTION_AMT", "amount IS NOT NULL",
      "amounts must cast to DECIMAL"),
     ("pas2", "TRANSACTION_TP", "regexp_matches(TRANSACTION_TP, '^2[0-9][A-Z]$')",
      "transaction types drive the 24K/24Z vs 24A/24E split in 03"),
@@ -171,12 +171,15 @@ def main():
         # Typed projection. Everything stays VARCHAR unless named below.
         extra = ""
         if "TRANSACTION_AMT" in cols:
+            # `amount`, not `transaction_amt`: DuckDB identifiers are
+            # case-insensitive, so a lowercase twin of TRANSACTION_AMT is the
+            # SAME column name and the table silently ends up with two.
             extra += (f", TRY_CAST(TRANSACTION_AMT AS {MONEY['TRANSACTION_AMT']})"
-                      " AS transaction_amt")
+                      " AS amount")
         if "TRANSACTION_DT" in cols:
             # Kept as filed AND parsed. FEC writes MMDDYYYY.
             extra += (", TRY_CAST(strptime(TRANSACTION_DT, '%m%d%Y') AS DATE)"
-                      " AS transaction_date")
+                      " AS txn_date")
         con.execute(f"CREATE OR REPLACE TABLE {table} AS "
                     f"SELECT *{extra} FROM {table}_raw")
         n = con.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
@@ -194,10 +197,15 @@ def main():
         read_raw(con, f"_raw_weball_{cycle}", path, WEBALL)
         parts.append(f"SELECT '{cycle}' AS cycle, * FROM _raw_weball_{cycle}")
     con.execute("CREATE OR REPLACE TABLE weball_raw AS " + " UNION ALL ".join(parts))
+    # Suffixed `_amt` for the same case-insensitivity reason as `amount`
+    # above: TRY_CAST(TTL_RECEIPTS) AS ttl_receipts would be a duplicate name.
     money_cols = ", ".join(
-        f"TRY_CAST({c} AS {WEBALL_MONEY}) AS {c.lower()}"
-        for c in ("TTL_RECEIPTS", "TTL_INDIV_CONTRIB", "OTHER_POL_CMTE_CONTRIB",
-                  "POL_PTY_CONTRIB", "TRANS_FROM_AUTH"))
+        f"TRY_CAST({c} AS {WEBALL_MONEY}) AS {alias}"
+        for c, alias in (("TTL_RECEIPTS", "receipts_amt"),
+                         ("TTL_INDIV_CONTRIB", "indiv_contrib_amt"),
+                         ("OTHER_POL_CMTE_CONTRIB", "pac_contrib_amt"),
+                         ("POL_PTY_CONTRIB", "party_contrib_amt"),
+                         ("TRANS_FROM_AUTH", "trans_from_auth_amt")))
     con.execute(f"""
         CREATE OR REPLACE TABLE weball AS
         SELECT *, {money_cols},
@@ -257,7 +265,7 @@ def main():
 
     # ---- date parsing ------------------------------------------------------
     dt_total, dt_bad = con.execute("""
-        SELECT count(*), count(*) FILTER (WHERE transaction_date IS NULL)
+        SELECT count(*), count(*) FILTER (WHERE txn_date IS NULL)
         FROM pas2 WHERE TRANSACTION_DT IS NOT NULL AND TRANSACTION_DT <> ''
     """).fetchone()
     dt_fail_share = dt_bad / dt_total if dt_total else 0

@@ -22,7 +22,7 @@ def con():
             coverage_start VARCHAR, coverage_end VARCHAR)
     """)
     c.execute("""
-        CREATE TABLE weball (cand_id VARCHAR, cycle VARCHAR,
+        CREATE TABLE weball_01b (cand_id VARCHAR, cycle VARCHAR,
             ttl_receipts DECIMAL(18,2), ttl_indiv DECIMAL(18,2))
     """)
     return c
@@ -32,7 +32,7 @@ def add(con, cand_id, api_receipts, itemized, ttl_receipts, ttl_indiv,
         cycle="2024"):
     con.execute("INSERT INTO api_totals VALUES (?,?,?,?,'2023-01-01','2024-12-31')",
                 [cand_id, cycle, api_receipts, itemized])
-    con.execute("INSERT INTO weball VALUES (?,?,?,?)",
+    con.execute("INSERT INTO weball_01b VALUES (?,?,?,?)",
                 [cand_id, cycle, ttl_receipts, ttl_indiv])
 
 

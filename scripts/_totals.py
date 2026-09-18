@@ -30,7 +30,7 @@ def derive_candidate_totals(con):
                w.ttl_indiv, a.itemized,
                w.ttl_indiv - a.itemized AS unitemized,
                a.coverage_start, a.coverage_end
-        FROM api_totals a JOIN weball w USING (cand_id, cycle)
+        FROM api_totals a JOIN weball_01b w USING (cand_id, cycle)
     """)
 
 

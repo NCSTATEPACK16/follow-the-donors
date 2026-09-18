@@ -193,7 +193,7 @@ def main():
                           delim='|', header=false, names={list(WEBALL)},
                           types={{{cols}}}, ignore_errors=true)"""
         for c in CYCLES)
-    con.execute(f"CREATE OR REPLACE TABLE weball AS {union}")
+    con.execute(f"CREATE OR REPLACE TABLE weball_01b AS {union}")
 
     derive_candidate_totals(con)
 
