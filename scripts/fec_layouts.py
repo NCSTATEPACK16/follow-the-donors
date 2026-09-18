@@ -28,3 +28,28 @@ WEBALL = [
 WEBALL_COMMITTEE_RECEIPTS = ("OTHER_POL_CMTE_CONTRIB", "POL_PTY_CONTRIB")
 
 LAYOUTS = {"weball": WEBALL}
+
+
+#: The independent-expenditure bulk CSV is the ONE FEC file that ships its own
+#: header row, so it is the one file where a true name-level symmetric
+#: difference is possible. Transcribed from the 2024 file so a column added,
+#: removed or renamed upstream fails the gate rather than silently shifting
+#: every field. Note the names are lowercase and abbreviated — nothing like the
+#: uppercase pipe-file convention.
+#: https://www.fec.gov/campaign-finance-data/independent-expenditure-file-description/
+INDEPENDENT_EXPENDITURE = [
+    "cand_id", "cand_name", "spe_id", "spe_nam", "ele_type",
+    "can_office_state", "can_office_dis", "can_office", "cand_pty_aff",
+    "exp_amo", "exp_date", "agg_amo", "sup_opp", "pur", "pay", "file_num",
+    "amndt_ind", "tran_id", "image_num", "receipt_dat", "fec_election_yr",
+    "prev_file_num", "dissem_dt",
+]
+
+#: Fields in itcont.txt that identify a natural person. Named here so that the
+#: release-blocker test in Phase 4 can scan every published artifact for them
+#: by importing this list rather than re-typing it. See CLAUDE.md invariant 1:
+#: no individual is ever named, and the site carrying ads makes that statutory.
+INDIVIDUAL_IDENTIFIERS = ["NAME", "CITY", "STATE", "ZIP_CODE", "EMPLOYER",
+                          "OCCUPATION"]
+
+LAYOUTS["independent_expenditure"] = INDEPENDENT_EXPENDITURE
