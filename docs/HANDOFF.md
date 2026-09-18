@@ -43,6 +43,8 @@ subsystem we would otherwise have inherited (see "What we are not building").
 | Stage 01 | `scripts/01_fetch.py` — passing, idempotent, `reports/01_fetch.md` |
 | Summary-file layouts | `scripts/fec_layouts.py` (FEC publishes no header CSV for these) |
 | Deps | `requirements.txt`, pinned. venv at `.venv/` |
+| **Phase 1 + Phase 2** | **Complete 2026-09-17.** Spike 00c, stages 01b/02/03/04. See `docs/superpowers/specs/2026-09-17-phase-1-2-implementation.md` |
+| Repo | Public at `github.com/NCSTATEPACK16/follow-the-donors`, MIT, CI on push/PR |
 
 Local footprint 1.0 GB. **Nothing is deployed, nothing is pushed, no git
 remote, no commits, no cloud credentials exist in this repo.**
@@ -149,16 +151,35 @@ which may be too tight for the individual-file path.
 
 ## Next step
 
-`scripts/02_normalize.py` — the schema-contract gate. Compare each bulk file's
-columns against its published header file and raise on any symmetric
-difference, the way follow-the-ppp's `02_normalize.py` gates against SBA's data
-dictionary. Load both cycles into DuckDB with an explicit `types={}` map where
-every `*_ID`, ZIP and FIPS is VARCHAR. Then `03_hygiene.py`, which is where the
-reconciliation gate above becomes a real acceptance check.
+Phases 1 and 2 are done: the reconciliation gate is real and failing-capable,
+and every committee is tiered and sector-classified. The full record, with
+decisions and findings, is in
+`docs/superpowers/specs/2026-09-17-phase-1-2-implementation.md`.
 
-Phase 3 (district geometry) is the genuine risk in this project, not the ETL:
-ten states redrew maps in 2025-26, Census `cd119` reflects none of them, two
-are blocked and two in live litigation. The approach is a `cd119` base with
-per-state overrides carrying vintage, provenance and legal status — build the
-mechanism, source states incrementally, and let an unsourced state stay on
-`cd119` and say so in the UI.
+**Phase 3 — district geometry.** Still the genuine risk, but now a bounded
+one: spike 00c proved the mechanism works and produced a crosswalk at 100%
+ZCTA resolution. Two things it settled that change the plan:
+
+- **There is no CD119 block equivalency file.** Census's newest BAF is CD116
+  vintage (proved by deriving it: Texas has 36 districts there and 38 in
+  cb_2025_us_cd119). The crosswalk is a **spatial intersection** — an area
+  approximation, not population-weighted — and every row records that in its
+  `derivation` field. Do not quietly upgrade the claim.
+- **85.12% of real FEC ZIPs resolve.** ZCTAs do not exist for PO-box-only or
+  point ZIPs, and committees use PO boxes heavily. The UI's ZIP entry has to
+  answer for the other 15% as something other than "no data".
+
+What remains for Phase 3 is sourcing the ten states that redrew maps in
+2025-26, each override carrying vintage, provenance and legal status. Every
+crosswalk row today is `cd119_base`. Adding a state is a data change, not a
+code change.
+
+**Two loose ends carried forward, deliberately:**
+
+1. `FEC_API_KEY` is not registered. `01b_totals.py` skips cleanly without it,
+   so the pipeline runs end to end, but its live sweep is unvalidated and
+   `MIN_RECEIPTS_AGREEMENT` is a provisional 0.90. Register free at
+   api.data.gov, put it in `.env`, run the stage, ratchet the constant.
+2. SCALISE (`H0LA01087`) is still unexplained. Carried as a regression case
+   asserting the ratio stays above 5x, so a change that quietly normalises it
+   fails loudly. If you work it out, write down what it was.
