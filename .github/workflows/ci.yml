@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Pinned to 3.14 deliberately: requirements.txt pins duckdb==1.5.5
+      # because 1.4.x ships no cp314 wheel and pip falls back to a silent
+      # source build that takes tens of minutes and looks like a hang.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      # The acceptance tests skipif-guard on the gitignored data/ tree, which
+      # is several GB of FEC bulk data and never reaches a runner. What runs
+      # here is the unit tests over the derivation helpers. That is the point:
+      # the logic is testable without the data, and the data-dependent gates
+      # run locally in the pipeline stages themselves.
+      - run: pytest -v
