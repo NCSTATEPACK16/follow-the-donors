@@ -1,0 +1,15 @@
+# Bulk data and build products are never committed: the FEC files are
+# gigabytes and are reproducible from scripts/01_fetch.py's manifest.
+data/
+tiles/
+*.duckdb
+*.duckdb.wal
+.env
+.venv/
+__pycache__/
+.pytest_cache/
+node_modules/
+dist/
+# git treats a symlink as a file, so the directory patterns above miss these
+web/public/data
+web/public/tiles

@@ -1,0 +1,9 @@
+# Pinned. follow-the-ppp had no lockfile and its tool versions were only ever
+# implicit in one machine's .venv; these are that machine's proven versions.
+#
+# duckdb is pinned to 1.5.5 specifically: 1.4.x ships no cp314 wheel, so pip
+# silently falls back to a source build that takes tens of minutes. If the
+# install appears to hang, check that first.
+duckdb==1.5.5
+boto3==1.43.72
+pytest==9.1.1
