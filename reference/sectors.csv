@@ -1,0 +1,57 @@
+# Curated committee -> sector overrides. THE ONE FILE IN THIS PIPELINE THAT
+# ENCODES HUMAN JUDGMENT, which is why it lives in reference/ (committed and
+# diffable) rather than data/ (gitignored and reproducible from a manifest).
+#
+# An override always wins over the structural rules in scripts/_committees.py.
+# A rule that could silently outrank a curated row would make this file
+# untrustworthy.
+#
+# Curated by descending share of 24K/24Z contribution dollars, per
+# CURATION_DOLLAR_THRESHOLD in 04_committees.py. These are committees FEC's
+# own ORG_TP cannot classify because they are not connected organisations —
+# overwhelmingly ideological and single-issue PACs, professional-services and
+# law-firm PACs, and medical association PACs.
+#
+# `sector` is our taxonomy, NOT FEC's. `org_type` on the committees table
+# carries FEC's ORG_TP verbatim and is never overwritten by anything here.
+cmte_id,sector,note
+C00211318,Professional Services,Deloitte
+C00227744,Professional Services,Ernst & Young
+C00280222,Professional Services,KPMG
+C00171330,Legal,Holland & Knight
+C00104901,Legal,Akin Gump Strauss Hauer & Feld
+C00213173,Legal,K&L Gates
+C00105338,Legal,Foley & Lardner
+C00000422,Health,American Medical Association
+C00343459,Health,American College of Radiology
+C00005660,Health,American Assn of Oral and Maxillofacial Surgeons
+C00008839,Health,American Podiatric Medical Association
+C00411553,Health,American Academy of Family Physicians
+C00250399,Transportation,Automotive Free International Trade PAC
+C00450692,Energy,POET (ethanol producer)
+C00091561,Membership,NARFE - federal employees and retirees
+C00639229,Ideological/Single-Issue,American Revival PAC
+C00448373,Ideological/Single-Issue,HuckPAC
+C00685297,Ideological/Single-Issue,Elect Democratic Women
+C00764233,Ideological/Single-Issue,Defend the Vote
+C00573261,Ideological/Single-Issue,End Citizens United
+C00580068,Ideological/Single-Issue,Progressive Turnout Project
+C00235853,Ideological/Single-Issue,Human Rights Campaign
+C00409730,Ideological/Single-Issue,New Democrat Coalition Action Fund
+C00679191,Ideological/Single-Issue,DigiDems
+C00504530,Ideological/Single-Issue,Congressional Leadership Fund
+C00570226,Ideological/Single-Issue,SEAL PAC
+C00247403,Ideological/Single-Issue,NORPAC
+C00495028,Ideological/Single-Issue,House Majority PAC
+C00448696,Ideological/Single-Issue,Senate Conservatives Fund
+C00433060,Ideological/Single-Issue,Republican Governance Group / Tuesday Group
+C00327189,Ideological/Single-Issue,Value in Electing Women
+C00451153,Ideological/Single-Issue,Gridiron PAC
+C00550970,Ideological/Single-Issue,Equality PAC
+C00365536,Ideological/Single-Issue,CHC BOLD PAC
+C00165159,Ideological/Single-Issue,Republican Main Street Partnership
+C00193433,Ideological/Single-Issue,EMILYs List
+C00488387,Ideological/Single-Issue,Tri-State Maxed-Out Women
+C00139659,Ideological/Single-Issue,Joint Action Cmte for Political Affairs
+C00188193,Ideological/Single-Issue,Women's Political Committee
+C00418897,Ideological/Single-Issue,VoteVets
