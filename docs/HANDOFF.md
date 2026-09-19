@@ -1,8 +1,9 @@
 # follow-the-donors — handoff
 
-Written 2026-09-16, end of Phase 0. Read this before touching anything.
-`CLAUDE.md` holds the rules; this holds the *reasoning*, which is the part that
-does not survive in code.
+Written 2026-09-16, end of Phase 0. Last updated 2026-09-18, end of Phase 3
+and stage 06 — the data is done and the plan for a launchable site is cut and
+written. Read this before touching anything. `CLAUDE.md` holds the rules; this
+holds the *reasoning*, which is the part that does not survive in code.
 
 ---
 
@@ -158,21 +159,75 @@ unlimited for **public** repos but 2,000 min/month for private — so repo
 visibility is quietly a cost decision. GitHub runners also have ~14 GB disk,
 which may be too tight for the individual-file path.
 
-## Next step
+## Next step — read this first
 
-Phase 3's *mechanism* is done and its remaining work is data sourcing, which
-is tracked in the stage's own report rather than in prose here.
+**The plan is written and cut: `docs/superpowers/plans/2026-09-18-v1-launch.md`.**
+Execute it task by task. It is deliberately smaller than the approved plan's
+Phase 4, and the cuts are recorded in it with the measurement that justified
+each one — do not quietly re-add them.
 
-**Phase 4 continues at `07_tiles.py`.** `06_aggregate.py` is done: the base
-map exists and its five-way partition sums to the hygiene total to the cent.
-Three things are still owed inside Phase 4, all recorded in that stage's spec:
-independent expenditures (fetched but never loaded), individual aggregates
-(need `itcont.txt` and the k>=5 rule), and the itemized/unitemized split
-(blocked on `FEC_API_KEY`).
+The data is done. Stages 01-06 all exit 0 and 79 tests pass. What remains for
+a launchable site is three stages, a design system, and the map:
 
-Read `docs/superpowers/specs/2026-09-18-phase-4-aggregation.md` first — it
-records a double-counting defect found in Phase 1-2's ccl join and fixed here,
-which moved the reconciliation figures every other document quotes.
+| task | deliverable |
+|---|---|
+| 1 | `07_tiles.py` — district choropleth → PMTiles z0-7 |
+| 2 | `09_district_pages.py` — 441 JSON files |
+| 3 | `10_sidecars.py` — search, ZIP index, `generation.json` |
+| 4 | the riso design system (`web/src/lib/riso.ts`, `styles/riso.css`) |
+| 5 | the map wearing it |
+
+### The visual thesis, so it does not get sanded off
+
+**Registration quality encodes certainty.** The hardest honesty problem in
+this project is that precision varies — 35.42% of 2024 district dollars sit
+on maps that are no longer the law, 14.63% of committee ZIPs resolve only to
+a three-digit prefix, and the crosswalk is area-weighted rather than
+population-weighted. Risograph's native language is imprecision made visible,
+so a crisply registered fill means exact and an off-register plate with open
+halftone means approximate. It is `geo_precision` from follow-the-ppp, in ink.
+
+This is the reason to use riso. If it becomes decoration — grain over
+everything, registration meaning nothing — it has failed and should be cut.
+
+### Ink values are validated, not chosen
+
+Classic risograph inks **fail** the accessibility checks. Measured with the
+dataviz skill's validator: Federal Blue reads gray (chroma 0.089), orange↔green
+separate by only ΔE 7.3 under protanopia, and two inks fall below 3:1 against
+the paper. The snapped, passing set is in the plan:
+
+- categorical `#2F4B9B · #FF48B0 · #1F7A4D · #C2410C · #7E5BB0` — all five
+  checks pass, worst CVD pair ΔE 8.7
+- sequential (one ink, light→dark) `#E8EDF7 #C3CFE8 #8FA3D1 #5C76B8 #2F4B9B
+  #1B2F6B` — monotonic in OKLab L (0.945 → 0.327)
+
+**Re-run `scripts/validate_palette.js` before changing any of them**, and run
+it again for `--mode dark`: dark mode is *selected* from the same ramps, never
+an automatic flip, because riso is a paper idiom and an inversion reads as mud.
+
+### Performance rules that constrain the aesthetic
+
+Inherited and non-negotiable: nothing competes with tile fetches on cellular.
+Grain is **one baked tiling PNG** at low opacity — never an SVG filter, never a
+per-frame canvas. Misregistration is a 1.5px offset on a duplicated layer in
+`multiply` — one composite, not a filter pass. True halftone on vector tiles is
+impractical and is not attempted; the map gets flat validated inks and the
+riso treatment lives in the chrome and the charts.
+
+### State of the repo
+
+- On `main` at `632aaba`, clean. Nothing pushed; `origin` exists
+  (`github.com/NCSTATEPACK16/follow-the-donors`) and pushing is the user's call.
+- `FEC_API_KEY` is registered and verified working (HTTP 200, 5,322 candidates
+  for 2024, ~54 pages). `01b_totals.py` has still never run — it is **optional
+  for v1**, because the itemized/unitemized band exists for individual money
+  and v1 shows none.
+- ~49 GB free after clearing `ppp-loan-map`'s regenerable `data/`, `tiles/` and
+  `web/dist` (28 GB). That project rebuilds from a 14.5 GB re-download; its
+  live site was unaffected and still serves from R2.
+- **No cloud write has happened.** Deploy is Phase 7 and needs explicit
+  approval, per the standing cost rule.
 
 ## What Phase 3 settled
 
