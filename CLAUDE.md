@@ -61,10 +61,43 @@ Each rule names the measurement or incident that produced it. Numbers cite
   contains only 22 leadership-PAC (`D`) links, so filtering on `CMTE_DSGN` is
   not sufficient. Enforce on committee type directly.
 
-- **Every district geometry carries its map vintage.** Ten states redrew
+- **Every district geometry carries its map vintage.** Eleven states redrew
   congressional maps in 2025-26 and Census `cd119` reflects none of them. A
   2024 contribution to "TX-35" and a 2026 one are not the same place. Vintage,
   provenance and legal status are first-class fields, rendered, never inferred.
+  Measured by `05_districts.py`: **173 of 441 districts (39.23%) are drawn
+  from a map that is no longer the law** — nine states are voting on new lines
+  in 2026 and we do not yet hold their geometry. `map_status` distinguishes
+  the four cases and they are never collapsed:
+  `cd119_current` (no redraw — the map we draw is the law), `cd119_superseded`
+  (a redraw is in effect and we cannot draw it, so these districts are stale),
+  `cd119_contested` (enacted then blocked; cd119 still governs), and
+  `override_applied`. Reporting a superseded district as current states
+  something false about 2 districts in 5.
+
+- **`legal_status` answers which map governs, never whether anyone is suing.**
+  Texas, Tennessee and Louisiana are all under active challenge and all three
+  of their new maps are `in_effect`. Missouri's and Virginia's were enacted
+  and then blocked, so `cd119` is operative there. Geometry we happen to hold
+  never decides this: a blocked map's shapefile on disk must not cause us to
+  draw a map that is not the law.
+
+- **An exact ZIP answer and a prefix answer are never equated.** ZCTAs do not
+  exist for PO-box-only or point ZIPs and committees use PO boxes heavily, so
+  only **85.12%** of the 5-digit ZIPs in FEC's `cm.txt` resolve by
+  intersection. The ZIP3 prefix fallback lifts that to **99.76%**, but it
+  answers with every district the ZIP's three-digit neighbourhood touches —
+  deliberately wider than the truth. Every row records which it is
+  (`zcta_intersection` vs `zip3_prefix`) and the UI renders them differently.
+  This is the structural heir to follow-the-ppp's `geo_precision`, same as the
+  itemized/unitemized split.
+
+- **The crosswalk is an area approximation, not population-weighted.** Census
+  publishes no CD119 block equivalency file — spike 00c proved it by deriving
+  the vintage rather than assuming it (Texas: 36 districts in `baf2020`, 38 in
+  `cb_2025_us_cd119`). A ZCTA split 50/50 by area may be split 90/10 by
+  people. `derivation` records this on every row. Do not quietly upgrade the
+  claim.
 
 - **All IDs and ZIPs are VARCHAR.** `CMTE_ID`, `CAND_ID`, `SUB_ID`, `TRAN_ID`,
   `ZIP_CODE`, FIPS, district numbers. Never int: leading zeros matter, `SUB_ID`

@@ -44,6 +44,7 @@ subsystem we would otherwise have inherited (see "What we are not building").
 | Summary-file layouts | `scripts/fec_layouts.py` (FEC publishes no header CSV for these) |
 | Deps | `requirements.txt`, pinned. venv at `.venv/` |
 | **Phase 1 + Phase 2** | **Complete 2026-09-17.** Spike 00c, stages 01b/02/03/04. See `docs/superpowers/specs/2026-09-17-phase-1-2-implementation.md` |
+| **Phase 3** | **Mechanism complete 2026-09-18.** `05_districts.py`, `reference/district_overrides.csv`, 7 acceptance checks. See `docs/superpowers/specs/2026-09-18-phase-3-districts.md` |
 | Repo | Public at `github.com/NCSTATEPACK16/follow-the-donors`, MIT, CI on push/PR |
 
 Local footprint 1.0 GB. **Nothing is deployed, nothing is pushed, no git
@@ -85,7 +86,8 @@ A strict per-candidate tolerance would fail on every run and teach us to ignore
 the gate, so it is instead:
 
 1. aggregate tolerance <= 1.5%
-2. coverage floor: >= 45.2% of candidates within 5%, ratcheted
+2. coverage floor: >= 44.0% of candidates within 5%, ratcheted
+   (the plan's 45.2% is not reproducible — see CLAUDE.md)
 3. a named-outlier list carried as parametrized regression cases
 
 **Unresolved, deliberately:** SCALISE (`H0LA01087`) — principal committee shows
@@ -151,28 +153,54 @@ which may be too tight for the individual-file path.
 
 ## Next step
 
-Phases 1 and 2 are done: the reconciliation gate is real and failing-capable,
-and every committee is tiered and sector-classified. The full record, with
-decisions and findings, is in
-`docs/superpowers/specs/2026-09-17-phase-1-2-implementation.md`.
+Phase 3's *mechanism* is done and its remaining work is data sourcing, which
+is tracked in the stage's own report rather than in prose here.
 
-**Phase 3 — district geometry.** Still the genuine risk, but now a bounded
-one: spike 00c proved the mechanism works and produced a crosswalk at 100%
-ZCTA resolution. Two things it settled that change the plan:
+**Phase 4 — aggregation and published artifacts** (`06_aggregate.py` onward)
+is the next code. The district key it aggregates on now exists and carries its
+own vintage, which is the thing Phase 4 was waiting for.
 
-- **There is no CD119 block equivalency file.** Census's newest BAF is CD116
-  vintage (proved by deriving it: Texas has 36 districts there and 38 in
-  cb_2025_us_cd119). The crosswalk is a **spatial intersection** — an area
-  approximation, not population-weighted — and every row records that in its
-  `derivation` field. Do not quietly upgrade the claim.
-- **85.12% of real FEC ZIPs resolve.** ZCTAs do not exist for PO-box-only or
-  point ZIPs, and committees use PO boxes heavily. The UI's ZIP entry has to
-  answer for the other 15% as something other than "no data".
+## What Phase 3 settled
 
-What remains for Phase 3 is sourcing the ten states that redrew maps in
-2025-26, each override carrying vintage, provenance and legal status. Every
-crosswalk row today is `cd119_base`. Adding a state is a data change, not a
-code change.
+- **39.23% of districts are stale, and the number is now rendered rather than
+  discovered.** 173 of 441 districts sit in the nine states voting on new
+  lines in 2026 whose geometry we do not hold. `map_status` separates
+  `cd119_superseded` (a redraw is in effect and we cannot draw it) from
+  `cd119_current` (no redraw happened). Collapsing those two — which is what
+  the spike's single `cd119_base` label did — states something false about two
+  districts in five.
+
+- **`legal_status` answers which map governs, not whether anyone is suing.**
+  This corrects the approved plan, which listed TN and LA as "in litigation"
+  and MO as "blocked". Measured against the record: TX, TN and LA are all
+  under active challenge and all three maps are **in effect** for 2026; MO and
+  VA were enacted and then struck down, so `cd119` is operative there. A
+  status that conflated the two would have drawn the wrong map for three
+  states.
+
+- **The 15% ZIP shortfall is closed to 0.24%.** The ZIP3 prefix fallback takes
+  answerable FEC committee ZIPs from 85.12% to **99.76%**. The prefix answer
+  names every district the ZIP's three-digit neighbourhood touches — wider
+  than the truth on purpose — and `resolution` records which kind of answer
+  each row is so the UI can never silently equate them.
+
+## What Phase 3 still owes
+
+Both lists are printed by `_districts.sourcing_gaps()` into
+`reports/05_districts.md` on every run, and neither fails the build: this is
+tracked work, not a defect, and a gate that fails on every run until fifty
+states are perfect is a gate nobody reads.
+
+1. **Geometry for nine states** — AL, CA, FL, LA, NC, OH, TN, TX, UT. Until
+   each arrives, those districts render as `cd119_superseded`. Adding one is a
+   data change: drop the shapefile in and name it in `geometry_source`.
+2. **Provenance for all eleven** is still `documentary` — the facts were read
+   from the Wikipedia 2025-26 redistricting article on 2026-09-18, which is
+   enough to *say* a state redrew and not enough to *draw* from. Ballotpedia
+   was tried first and is bot-blocked, so its pages could not be read and were
+   not cited. Replace each with the enacting legislature's bill record, the
+   canvass, or the court order, and flip `provenance_kind` to
+   `enacting_authority`.
 
 **Two loose ends carried forward, deliberately:**
 
