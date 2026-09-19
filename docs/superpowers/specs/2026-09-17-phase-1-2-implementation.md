@@ -39,6 +39,12 @@ Shared helpers extracted rather than copy-pasted: `_report.py`, `_db.py`,
 `_committees.py` (the numbered stages cannot be imported — `03_hygiene` is not
 a legal identifier — so anything deserving a test lives beside them).
 
+> **Superseded figures, 2026-09-18.** The -0.61% aggregate and 44.04%
+> coverage recorded below were measured with a ccl join that double-counted
+> $2,545,768. After the fix they are **-0.72%** and **44.47%**. The rest of
+> this document stands; see
+> `docs/superpowers/specs/2026-09-18-phase-4-aggregation.md`.
+
 ## Findings that changed the plan
 
 1. **The district Block Equivalency File does not exist for CD119.** The

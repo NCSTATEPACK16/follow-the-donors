@@ -32,8 +32,24 @@ Each rule names the measurement or incident that produced it. Numbers cite
 - **Resolve the candidate through the recipient committee, never through
   pas2's own `CAND_ID`.** Join `pas2.OTHER_ID` -> `ccl.CMTE_ID` -> `CAND_ID`.
   Measured: the donor-reported `CAND_ID` column reconciles at **-6.79%**; the
-  recipient-committee join reconciles at **-0.61%**, with 99.95% of rows
+  recipient-committee join reconciles at **-0.72%**, with 99.95% of rows
   resolving. The donor's own attribution is not trustworthy.
+
+- **`ccl` is not unique on `CMTE_ID`, and joining as if it were double-counts
+  money.** 190 committees in 2024 (262 in 2026) link to more than one
+  `CAND_ID`, so a join on `CMTE_ID` alone turned **9,972 pas2 rows into two
+  contributions each and double-counted $2,545,768** — manufacturing `SUB_ID`
+  collisions the bulk file does not have, directly against the invariant
+  above. Resolve only through a candidate's own authorized committees
+  (`CMTE_DSGN` in `P`, `A`) and take the most recent registration
+  (`FEC_ELECTION_YR`, then `LINKAGE_ID` to break ties deterministically —
+  an arbitrary tiebreak moves money between candidates from one rebuild to
+  the next). 164 of those 190 are one person with two registrations; the rest
+  are joint fundraising committees, which link to every candidate they raise
+  for (one links to 16) and whose receipts therefore belong to no single
+  candidate. Measured, no 24K or 24Z in pas2 is received by a committee
+  outside `P`/`A`, so the restriction costs nothing. See
+  `_hygiene.candidate_link_sql()`.
 
 - **Do not de-duplicate amendments. The bulk files already supersede.**
   `SUB_ID` is unique across all 703,597 pas2 rows, and only **600 rows
@@ -139,15 +155,19 @@ Computed PAC contributions per candidate, checked against the FEC's own
 published totals in `weball` (`OTHER_POL_CMTE_CONTRIB + POL_PTY_CONTRIB`).
 This is what makes the hygiene checkable rather than asserted.
 
-Aggregate reconciles to **-0.61%**, but per-candidate does not: median relative
+Aggregate reconciles to **-0.72%**, but per-candidate does not: median relative
 error 6.17%, p90 80%. Errors net out nationally and are large individually, so
 the gate is three parts, never a strict per-candidate tolerance (which would
 fail constantly and train us to ignore it):
 
 1. Aggregate tolerance: |computed - reported| / reported <= 1.5%.
-   Achieved **-0.61%** for 2024, reproduced exactly by `03_hygiene.py`.
+   Achieved **-0.72%** for 2024. (Was -0.61% until 2026-09-18, when the ccl
+   fan-out fix removed $2,545,768 of double-counted money — the figure got
+   slightly worse because it had been flattered by duplicate rows.)
 2. Coverage floor: share of candidates within 5% must not regress below the
-   achieved **44.0%**, ratcheted the way follow-the-ppp ratchets `MIN_MATCHED`.
+   achieved **44.4%**, ratcheted the way follow-the-ppp ratchets `MIN_MATCHED`.
+   Measured 44.47% after the ccl fan-out fix, up from 44.04% before it:
+   removing the duplicate rows moved candidates INTO agreement.
 
    *Corrected 2026-09-17.* This previously read 45.2%, taken from the Phase 0
    spike's "rejected alternatives" table. That figure is **not reproducible**

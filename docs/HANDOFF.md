@@ -45,6 +45,7 @@ subsystem we would otherwise have inherited (see "What we are not building").
 | Deps | `requirements.txt`, pinned. venv at `.venv/` |
 | **Phase 1 + Phase 2** | **Complete 2026-09-17.** Spike 00c, stages 01b/02/03/04. See `docs/superpowers/specs/2026-09-17-phase-1-2-implementation.md` |
 | **Phase 3** | **Mechanism complete 2026-09-18.** `05_districts.py`, `reference/district_overrides.csv`, 7 acceptance checks. See `docs/superpowers/specs/2026-09-18-phase-3-districts.md` |
+| **Phase 4** | **Stage 06 complete 2026-09-18.** Base map, + the ccl fan-out fix. See `docs/superpowers/specs/2026-09-18-phase-4-aggregation.md` |
 | Repo | Public at `github.com/NCSTATEPACK16/follow-the-donors`, MIT, CI on push/PR |
 
 Local footprint 1.0 GB. **Nothing is deployed, nothing is pushed, no git
@@ -63,8 +64,14 @@ All from the 2024 cycle, in `reports/00_feasibility.md`:
   repeated "drop N where an A exists" filter would delete 16,098 rows /
   $36,836,573 — 27x more than exist. **It destroys data. Do not implement it.**
 - **Join through the recipient, not the donor's claim.** `pas2.OTHER_ID` ->
-  `ccl.CMTE_ID` -> `CAND_ID` reconciles at **-0.61%**; `pas2`'s own `CAND_ID`
+  `ccl.CMTE_ID` -> `CAND_ID` reconciles at **-0.72%**; `pas2`'s own `CAND_ID`
   column reconciles at **-6.79%**. 99.95% of rows resolve.
+- **But `ccl` is not unique on `CMTE_ID`.** 190 committees (2024) link to two
+  or more `CAND_ID`s, so joining on `CMTE_ID` alone double-counted $2,545,768
+  across 9,972 rows. Found in Phase 4 — the visible symptom was BIDEN and
+  HARRIS reporting an identical $818,886, their shared committee credited to
+  both. Fixed 2026-09-18; the aggregate moved -0.61% -> -0.72% (it had been
+  flattered by the duplicates) and coverage 44.04% -> 44.47%.
 - `24T` (earmark conduit) **does not occur in pas2 at all** — it is an
   individual-file phenomenon.
 - `ccl` contains only **22** leadership-PAC (`D`) links, so filtering on
@@ -156,9 +163,16 @@ which may be too tight for the individual-file path.
 Phase 3's *mechanism* is done and its remaining work is data sourcing, which
 is tracked in the stage's own report rather than in prose here.
 
-**Phase 4 — aggregation and published artifacts** (`06_aggregate.py` onward)
-is the next code. The district key it aggregates on now exists and carries its
-own vintage, which is the thing Phase 4 was waiting for.
+**Phase 4 continues at `07_tiles.py`.** `06_aggregate.py` is done: the base
+map exists and its five-way partition sums to the hygiene total to the cent.
+Three things are still owed inside Phase 4, all recorded in that stage's spec:
+independent expenditures (fetched but never loaded), individual aggregates
+(need `itcont.txt` and the k>=5 rule), and the itemized/unitemized split
+(blocked on `FEC_API_KEY`).
+
+Read `docs/superpowers/specs/2026-09-18-phase-4-aggregation.md` first — it
+records a double-counting defect found in Phase 1-2's ccl join and fixed here,
+which moved the reconciliation figures every other document quotes.
 
 ## What Phase 3 settled
 

@@ -2,7 +2,7 @@
 
 Districts: 441
 Override registry: 11 states
-Elapsed: 12.2s
+Elapsed: 10.5s
 
 
 ## Map vintage

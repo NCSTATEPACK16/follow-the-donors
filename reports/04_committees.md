@@ -13,25 +13,25 @@ Read from `cm.CMTE_DSGN` and `cm.CMTE_TP`, never from `ccl`. For 2024 `ccl` carr
 
 | tier | committees | of which gave 24K/24Z | 24K/24Z given |
 |---|---|---|---|
-| `pac` | 6,002 | 2,911 | $415,657,708 |
-| `leadership_pac` | 839 | 626 | $65,953,640 |
-| `authorized` | 8,715 | 636 | $17,660,714 |
+| `pac` | 6,002 | 2,911 | $414,112,083 |
+| `leadership_pac` | 839 | 626 | $65,283,789 |
+| `authorized` | 8,715 | 636 | $17,539,105 |
 | `joint_fundraising` | 1,298 | 45 | $5,851,088 |
-| `hybrid_pac` | 897 | 215 | $4,185,966 |
-| `party` | 613 | 127 | $2,846,395 |
-| `super_pac` | 2,574 | 6 | $99,795 |
+| `hybrid_pac` | 897 | 215 | $4,096,963 |
+| `party` | 613 | 127 | $2,736,825 |
+| `super_pac` | 2,574 | 6 | $89,685 |
 
 
 ### 2026
 
 | tier | committees | of which gave 24K/24Z | 24K/24Z given |
 |---|---|---|---|
-| `pac` | 5,957 | 2,743 | $327,160,699 |
-| `leadership_pac` | 922 | 587 | $54,157,708 |
-| `authorized` | 8,154 | 455 | $14,235,355 |
-| `hybrid_pac` | 1,099 | 229 | $11,981,699 |
-| `party` | 608 | 61 | $2,737,659 |
-| `joint_fundraising` | 1,299 | 17 | $1,570,872 |
+| `pac` | 5,957 | 2,743 | $325,635,783 |
+| `leadership_pac` | 922 | 587 | $53,823,108 |
+| `authorized` | 8,154 | 455 | $14,121,355 |
+| `hybrid_pac` | 1,099 | 229 | $11,846,882 |
+| `party` | 608 | 61 | $2,732,880 |
+| `joint_fundraising` | 1,299 | 17 | $1,559,291 |
 | `super_pac` | 2,655 | 4 | $10,047 |
 
 
@@ -39,28 +39,28 @@ Read from `cm.CMTE_DSGN` and `cm.CMTE_TP`, never from `ccl`. For 2024 `ccl` carr
 
 | cycle | 24K/24Z total | classified | share | role |
 |---|---|---|---|---|
-| 2024 | $512,255,306 | $488,715,290 | 95.40% | **gated** |
-| 2026 | $411,854,039 | $383,794,493 | 93.19% | report only |
+| 2024 | $509,709,538 | $486,436,753 | 95.43% | **gated** |
+| 2026 | $409,729,346 | $381,892,347 | 93.21% | report only |
 
 
 ### 2024 by sector
 
 | sector | committees | dollars | share |
 |---|---|---|---|
-| Corporate | 1,344 | $175,619,206 | 34.28% |
-| Trade Association | 534 | $89,800,380 | 17.53% |
-| Leadership PAC | 626 | $65,953,640 | 12.88% |
-| Labor | 159 | $52,235,868 | 10.20% |
-| Membership | 208 | $48,644,540 | 9.50% |
-| Unclassified | 809 | $23,540,016 | 4.60% |
-| Candidate Committee | 636 | $17,660,714 | 3.45% |
-| Ideological/Single-Issue | 25 | $15,038,775 | 2.94% |
-| Cooperative | 39 | $5,854,566 | 1.14% |
-| Joint Fundraising | 45 | $5,851,088 | 1.14% |
+| Corporate | 1,344 | $175,561,357 | 34.44% |
+| Trade Association | 534 | $89,758,630 | 17.61% |
+| Leadership PAC | 626 | $65,283,789 | 12.81% |
+| Labor | 159 | $51,860,368 | 10.17% |
+| Membership | 208 | $47,881,555 | 9.39% |
+| Unclassified | 809 | $23,272,785 | 4.57% |
+| Candidate Committee | 636 | $17,539,105 | 3.44% |
+| Ideological/Single-Issue | 25 | $14,914,352 | 2.93% |
+| Cooperative | 39 | $5,854,566 | 1.15% |
+| Joint Fundraising | 45 | $5,851,088 | 1.15% |
 | Professional Services | 3 | $3,360,000 | 0.66% |
-| Health | 5 | $3,003,450 | 0.59% |
-| Party | 127 | $2,846,395 | 0.56% |
-| Legal | 4 | $1,714,668 | 0.33% |
+| Health | 5 | $2,988,450 | 0.59% |
+| Party | 127 | $2,736,825 | 0.54% |
+| Legal | 4 | $1,714,668 | 0.34% |
 | Transportation | 1 | $760,000 | 0.15% |
 | Energy | 1 | $372,000 | 0.07% |
 
@@ -71,22 +71,22 @@ Every committee giving at least 0.01% of contribution dollars must carry a secto
 
 | cycle | dollar floor | committees above it | classified | still unclassified |
 |---|---|---|---|---|
-| 2024 | $51,226 | 1,698 | 1,489 | 209 |
+| 2024 | $50,971 | 1,703 | 1,495 | 208 |
 
 
 ## Largest unclassified committees
 
 | committee | name | dollars |
 |---|---|---|
-| `C00332296` | SUSAN B. ANTHONY LIST INC. CANDIDATE FUND (DBA SUSAN B. ANTHONY PRO-LIFE AMERICA CANDIDATE FUND) | $312,456 |
+| `C00332296` | SUSAN B. ANTHONY LIST INC. CANDIDATE FUND (DBA SUSAN B. ANTHONY PRO-LIFE AMERICA CANDIDATE FUND) | $307,456 |
 | `C00661272` | WITH HONOR PAC | $307,000 |
 | `C00401083` | SQUIRE PATTON BOGGS POLITICAL ACTION COMMITTEE (SQUIRE PATTON BOGGS PAC) | $301,250 |
 | `C00278895` | NELSON MULLINS RILEY & SCARBOROUGH, LLP FEDERAL POLITICAL COMMITTEE | $294,668 |
 | `C00755173` | HONOR COURAGE COMMITMENT PAC | $290,900 |
 | `C00383976` | FRIENDS OF COMMUNITY ONCOLOGY PAC | $288,000 |
-| `C00842104` | FIGHT LIKE HELL PAC | $280,900 |
-| `C00651042` | MOMS FED UP | $278,500 |
-| `C00710848` | DMFI PAC | $278,000 |
+| `C00651042` | MOMS FED UP | $276,500 |
+| `C00842104` | FIGHT LIKE HELL PAC | $270,900 |
+| `C00710848` | DMFI PAC | $270,000 |
 | `C00410068` | FRATERNITY & SORORITY POLITICAL ACTION COMMITTEE | $261,000 |
 
 These render as `Unclassified` in the UI. They are never guessed at, and the honest number above is published rather than hidden.
@@ -96,7 +96,7 @@ These render as `Unclassified` in the UI. They are never guessed at, and the hon
 
 | check | result | detail |
 |---|---|---|
-| 2024 sector dollar coverage | PASS | 95.40% (floor 95.00%) |
+| 2024 sector dollar coverage | PASS | 95.43% (floor 95.00%) |
 | every committee has a tier | PASS | no NULL tier |
 | leadership PACs are tiered from cm, not ccl | PASS | 839 leadership PACs in cm; ccl holds 22 links |
 | curated overrides all applied | PASS | 40 overrides in reference/sectors.csv |

@@ -36,7 +36,9 @@ AGG_TOLERANCE = 0.015
 
 #: Share of candidates whose computed total is within 5% of reported.
 #:
-#: Ratcheted to the value THIS pipeline achieves, which is 44.0% — not the
+#: Ratcheted 2026-09-18 to 44.4%, the value THIS pipeline achieves after
+#: the ccl fan-out fix (44.47%, up from 44.04% — removing the duplicate
+#: rows moved candidates INTO agreement). Was 44.0% — not the
 #: 45.2% carried in CLAUDE.md and docs/HANDOFF.md. That figure comes from the
 #: Phase 0 spike's "rejected alternatives" table, and it could not be
 #: reproduced here. What did reproduce, essentially exactly, is every
@@ -50,7 +52,7 @@ AGG_TOLERANCE = 0.015
 #: repo. Ratcheting DOWN to a number we cannot reproduce would be worse than
 #: useless, so this is set to the measured value and the discrepancy is
 #: recorded rather than normalised away.
-MIN_COVERAGE_WITHIN_5PCT = 0.44
+MIN_COVERAGE_WITHIN_5PCT = 0.444
 
 
 def main():
