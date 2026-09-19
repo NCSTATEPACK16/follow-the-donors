@@ -1,0 +1,389 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Specimen — riso prototype C</title>
+<link rel="stylesheet" href="./fonts.css">
+<link rel="stylesheet" href="./shared/base.css">
+<style>
+/* ==================================================================
+   C — SPECIMEN
+   The subject is money, so the print idiom is the one money is
+   actually printed in: intaglio engraving. Riso is the cheap,
+   democratic cousin of that — same spot inks, same registration
+   problems, none of the authority. Putting the two together is the
+   argument: this is a document ABOUT currency that is visibly not
+   currency.
+
+   Tone is a LINE screen, not a dot screen. Engravers build value with
+   parallel lines whose weight varies, and line is also the correct
+   answer to the halftone's weakness — it stays legible at small
+   sizes where a dot screen turns to mud.
+
+   Certainty is the ENGRAVING CONVENTION. A district on the map that
+   governs is ruled in clean parallel lines. A district drawn off a
+   superseded map is cross-hatched — which in engraving has always
+   meant shadow, doubt, the part that is not fully resolved.
+   ================================================================== */
+:root { --paper: #EFE9D9; --key: #24457F; }
+[data-theme="dark"] { --paper: #141410; --key: #C9D4E8; }
+
+body { background: var(--paper); }
+.stage-inner { position: relative; background: var(--paper); }
+.stage-inner canvas { display: block; width: 100%; height: auto; }
+#lines { position: absolute; inset: 0; }
+
+.stage-inner::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background-image: url("./texture/grain-128.png"), url("./texture/mottle-256.png");
+  background-size: 128px, 256px;
+  mix-blend-mode: multiply; opacity: .42;
+}
+[data-theme="dark"] .stage-inner::after { mix-blend-mode: screen; opacity: .20; }
+
+/* Banknote furniture: a guilloche rule under the masthead and a ruled
+   frame around the plate. Both are drawn, not decorative images. */
+.guilloche { display: block; width: 100%; height: 46px; }
+.masthead { border-bottom: none; padding-bottom: 8px; }
+.masthead h1 {
+  font-family: var(--didone); font-weight: 800;
+  font-size: clamp(40px, 7.6vw, 84px); letter-spacing: -.02em;
+}
+.kicker { font-family: var(--sans); }
+.stat-num { font-family: var(--didone); font-weight: 800; }
+
+.plate-frame {
+  border: 1.5px solid var(--key); padding: 5px;
+  position: relative;
+}
+.plate-frame::before {
+  content: ""; position: absolute; inset: 2.5px;
+  border: .5px solid var(--key); opacity: .55; pointer-events: none; z-index: 2;
+}
+.denom {
+  position: absolute; z-index: 3; font-family: var(--didone); font-weight: 800;
+  font-size: 13px; color: var(--key); letter-spacing: .04em;
+  background: var(--paper); padding: 0 5px;
+}
+.denom-tl { top: -8px; left: 14px; }
+.denom-br { bottom: -8px; right: 14px; }
+
+.sheet { border: 1.5px solid var(--key); position: relative; }
+.sheet::before {
+  content: ""; position: absolute; inset: 3px; border: .5px solid var(--key);
+  opacity: .45; pointer-events: none;
+}
+.sheet-title { font-family: var(--didone); font-weight: 600; }
+.sheet-amount { font-family: var(--didone); font-weight: 800; letter-spacing: -.015em; }
+.sheet-eyebrow { color: var(--key); }
+
+.legend-chip { border: .5px solid var(--key); background: none !important; padding: 0; }
+.legend-chip canvas { display: block; width: 30px; height: 13px; }
+.lv-mark { border: .5px solid var(--key); }
+.masthead .thesis { font-family: var(--sans); }
+.serial {
+  font-family: var(--mono); font-size: 11px; color: var(--key);
+  letter-spacing: .1em; margin-top: 8px;
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#stage">Skip to the map</a>
+<div id="shell"></div>
+<svg class="guilloche" id="guilloche" aria-hidden="true"></svg>
+<div class="controls">
+  <button class="ctl" id="theme" aria-pressed="false">Dark stock</button>
+  <button class="ctl" id="tabletoggle" aria-pressed="false">Table view</button>
+  <button class="ctl" id="hatchtoggle" aria-pressed="true">Cross-hatch = superseded</button>
+  <span class="stage-note" id="perf"></span>
+</div>
+<div class="wrap">
+  <div class="stage" id="stage">
+    <div class="plate-frame">
+      <span class="denom denom-tl" id="denomA">2024</span>
+      <span class="denom denom-br" id="denomB">SERIES 2024</span>
+      <div class="stage-inner">
+        <canvas id="plate" role="img"
+          aria-label="Engraved choropleth of PAC contributions by congressional district, 2024 cycle"></canvas>
+        <canvas id="lines" aria-hidden="true"></canvas>
+      </div>
+    </div>
+    <div class="stage-note">
+      <span id="countline"></span><span id="staleline"></span>
+    </div>
+    <div class="serial" id="serial"></div>
+    <div class="offmap" id="offmap"></div>
+  </div>
+  <aside class="rail">
+    <div id="legend"></div>
+    <div class="sheet" id="sheet" aria-live="polite"></div>
+  </aside>
+</div>
+<div class="tablewrap" id="table" hidden></div>
+<div class="colophon">
+  <h2>Prototype C — Specimen</h2>
+  <p><strong>Thesis:</strong> the subject is money, so the idiom is the one money
+  is printed in. Tone is a line screen the way an engraver builds value, and
+  certainty is the engraving convention: clean parallel ruling where the map
+  governs, cross-hatching where it does not. Cross-hatch has meant shadow and
+  doubt since long before anyone drew a congressional district.</p>
+  <p><strong>Why it may be the right one:</strong> it is the only one of the
+  three whose visual language is about the <em>subject</em> rather than about
+  the printing process. It also gives the certainty encoding a second channel —
+  line direction — which survives greyscale, print and colour-vision deficiency
+  without relying on hue at all.</p>
+  <p><strong>Why it may not be:</strong> banknote furniture is close to a
+  tone this project may not want. A site about money in politics that dresses
+  itself as currency risks looking like it is celebrating it.</p>
+</div>
+
+<script src="./vendor/d3-array.min.js"></script>
+<script src="./vendor/d3-geo.min.js"></script>
+<script type="module">
+import { C, coverage, usdCompact, usd } from "./shared/inks.js";
+import { ruleRect } from "./shared/screens.js";
+import { loadAtlas, makeProjection, projectAll, measure, makePicker, partitionProjectable,
+         renderOffmap, renderSheet, renderTable, renderLegend, shellHTML, debounce } from "./shared/atlas.js";
+
+const SYS = C;
+/* Engraving conventions per map vintage. Gap is in CSS pixels between rules.
+   A wider gap with the same ink fraction means a heavier, more visible line —
+   engravers coarsen the ruling exactly where they want the eye to slow down. */
+const RULING = {
+  cd119_current:    { gap: 3.0, angles: [18] },           // clean parallel ruling
+  cd119_contested:  { gap: 4.0, angles: [18, 90] },        // ruled, then crossed once
+  cd119_superseded: { gap: 5.2, angles: [18, -52] },       // full cross-hatch
+};
+
+let dark = false, shapes = [], picker = null, sel = -1, hov = -1, hatch = true;
+let W = 0, H = 0, atlas = null, offmap = [];
+const plate = document.getElementById("plate");
+const lines = document.getElementById("lines");
+
+const t0 = performance.now();
+atlas = await loadAtlas();
+const tLoad = performance.now() - t0;
+
+document.getElementById("shell").innerHTML = shellHTML({
+  kicker: "follow the donors · prototype C",
+  title: "Specimen",
+  thesis: "Federal PAC money, engraved. Line weight is the money. Where the ruling crosses itself, the district is drawn from a map that is no longer the law.",
+  meta: atlas.meta,
+});
+document.getElementById("countline").textContent = "Canvas2D line engraving · one static pass";
+document.getElementById("staleline").textContent =
+  `${atlas.meta.status_counts.cd119_superseded} districts cross-hatched`;
+document.getElementById("serial").textContent =
+  `FEC BULK PAS2 · TYPES 24K 24Z · ${atlas.meta.filing_period.toUpperCase()}`;
+
+/* Guilloche: two coupled rosettes swept along the width. This is the real
+   thing — a spirograph, which is what a geometric lathe draws — rather than a
+   picture of one. It is the only ornament in the design and it is here
+   because it is the single most recognisable mark of printed money. */
+function drawGuilloche() {
+  const svg = document.getElementById("guilloche");
+  const w = Math.max(600, svg.getBoundingClientRect().width || 1200), h = 46;
+  svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+  svg.setAttribute("preserveAspectRatio", "none");
+  const key = dark ? SYS.keyDark : SYS.key;
+  const mid = h / 2 - 3;
+  /* A geometric lathe draws ONE curve and then repeats it at a small phase
+     offset; the moire between the copies is the whole effect. A single
+     wavy line is not a guilloche, which is what the first version drew. */
+  const strand = (phase, A1, f1, A2, f2, op) => {
+    let d = "";
+    for (let t = 0; t <= w; t += 1.5) {
+      const y = mid + A1 * Math.sin(t / f1 + phase) + A2 * Math.sin(t / f2 - phase * 1.7);
+      d += (t === 0 ? "M" : "L") + t.toFixed(1) + "," + y.toFixed(2);
+    }
+    return `<path d="${d}" fill="none" stroke="${key}" stroke-width=".5" opacity="${op}"/>`;
+  };
+  let out = "";
+  for (let i = 0; i < 9; i++) {
+    const ph = (i / 9) * Math.PI * 2;
+    out += strand(ph, 11, 47, 5.5, 13, .55);
+    out += strand(-ph, 8, 31, 3.5, 9.5, .38);
+  }
+  out += `<line x1="0" y1="${h - 1}" x2="${w}" y2="${h - 1}" stroke="${key}" stroke-width="1.5"/>`;
+  out += `<line x1="0" y1="${h - 4}" x2="${w}" y2="${h - 4}" stroke="${key}" stroke-width=".5" opacity=".5"/>`;
+  svg.innerHTML = out;
+}
+
+function layout() {
+  const box = document.getElementById("stage").getBoundingClientRect();
+  W = Math.max(320, Math.round(box.width) - 14);
+  H = Math.round(W * 0.60);
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  for (const cv of [plate, lines]) {
+    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+    cv.style.width = `${W}px`; cv.style.height = `${H}px`;
+  }
+  const part = partitionProjectable(atlas.districts);
+  offmap = part.offmap;
+  const proj = makeProjection(part.mapped, W, H);
+  shapes = measure(projectAll(part.mapped, proj));
+  picker = makePicker(shapes, W, H, 1);
+  drawGuilloche();
+  drawPlate(dpr);
+  drawLines(dpr);
+  paintLegend();
+  renderOffmap(document.getElementById("offmap"), offmap, SYS, dark, (geoid) => {
+    const f = offmap.find((x) => x.properties.geoid === geoid);
+    renderSheet(document.getElementById("sheet"), { props: f.properties }, atlas.sectors, SYS, dark);
+  });
+}
+
+const trace = (ctx, s) => {
+  ctx.beginPath();
+  for (const r of s.rings) {
+    ctx.moveTo(r.xy[0], r.xy[1]);
+    for (let k = 2; k < r.xy.length; k += 2) ctx.lineTo(r.xy[k], r.xy[k + 1]);
+    ctx.closePath();
+  }
+};
+
+function drawPlate(dpr) {
+  const ctx = plate.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = dark ? SYS.paperDark : SYS.paper;
+  ctx.fillRect(0, 0, W, H);
+  const ramp = dark ? SYS.rampDark : SYS.ramp;
+  const ink = ramp[dark ? 3 : 3];      // one ink; tone comes from the ruling
+  ctx.lineCap = "butt";
+  for (const s of shapes) {
+    const cov = coverage(s.props.pac_cents);
+    const rule = (hatch ? RULING[s.props.map_status] : null) || RULING.cd119_current;
+    ctx.save();
+    trace(ctx, s); ctx.clip();
+    const [x0, y0, x1, y1] = s.bbox;
+    const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+    const span = Math.hypot(x1 - x0, y1 - y0) / 2 + 4;
+    // Ink fraction is split across the passes, so a cross-hatched district
+    // carries the SAME total ink as a ruled one at the same money. Otherwise
+    // cross-hatching would darken the district and the certainty encoding
+    // would corrupt the money encoding.
+    const passes = rule.angles.length;
+    const frac = 1 - Math.pow(1 - cov, 1 / passes);
+    ctx.strokeStyle = ink;
+    for (const deg of rule.angles) {
+      const a = deg * Math.PI / 180;
+      ctx.save();
+      ctx.translate(cx, cy); ctx.rotate(a);
+      ctx.lineWidth = Math.max(0.35, rule.gap * frac);
+      ctx.beginPath();
+      for (let y = -span; y <= span; y += rule.gap) {
+        ctx.moveTo(-span, y); ctx.lineTo(span, y);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+}
+
+function drawLines(dpr) {
+  const ctx = lines.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  const key = dark ? SYS.keyDark : SYS.key;
+  ctx.lineJoin = "round";
+  // Against a hatched fill a hairline vanishes. The keyline has to be the
+  // heaviest mark on the plate or the districts read as one blurred field.
+  ctx.lineWidth = 0.9; ctx.strokeStyle = key;
+  ctx.globalAlpha = .92;
+  for (const s of shapes) { trace(ctx, s); ctx.stroke(); }
+  ctx.globalAlpha = 1;
+  if (hov >= 0 && hov !== sel) { ctx.lineWidth = 1.4; trace(ctx, shapes[hov]); ctx.stroke(); }
+  if (sel >= 0) { ctx.lineWidth = 2.2; trace(ctx, shapes[sel]); ctx.stroke(); }
+}
+
+function paintLegend() {
+  renderLegend(document.getElementById("legend"), SYS, dark, {
+    staleLabel: "Superseded — cross-hatched; a redraw is in effect and we cannot draw it",
+  });
+  const ramp = dark ? SYS.rampDark : SYS.ramp;
+  const ink = ramp[3];
+  document.querySelectorAll(".legend-chip").forEach((el, i) => {
+    const cv = document.createElement("canvas");
+    cv.width = 60; cv.height = 26;
+    const c = cv.getContext("2d");
+    c.fillStyle = dark ? SYS.paperDark : SYS.paper; c.fillRect(0, 0, 60, 26);
+    const cov = 0.20 + (i / 5) * (0.88 - 0.20);
+    ruleRect(c, 0, 0, 60, 26, ink, 18, cov, 5.2);
+    el.innerHTML = ""; el.appendChild(cv);
+  });
+  // Vintage swatches show the actual ruling, not an abstract line.
+  const marks = document.querySelectorAll(".lv-mark");
+  ["cd119_current", "cd119_contested", "cd119_superseded"].forEach((st, i) => {
+    if (!marks[i]) return;
+    const cv = document.createElement("canvas");
+    cv.width = 60; cv.height = 26; cv.style.width = "30px"; cv.style.height = "13px";
+    cv.style.display = "block";
+    const c = cv.getContext("2d");
+    c.fillStyle = dark ? SYS.paperDark : SYS.paper; c.fillRect(0, 0, 60, 26);
+    const rule = RULING[st];
+    const frac = 1 - Math.pow(1 - 0.55, 1 / rule.angles.length);
+    for (const deg of rule.angles) {
+      ruleRect(c, 0, 0, 60, 26, ink, deg, frac, rule.gap * 2);
+    }
+    marks[i].style.background = "none";
+    marks[i].innerHTML = ""; marks[i].appendChild(cv);
+  });
+}
+
+const tip = Object.assign(document.createElement("div"), { className: "tip" });
+tip.hidden = true; document.body.appendChild(tip);
+lines.style.pointerEvents = "auto";
+const dpr = () => Math.min(2, window.devicePixelRatio || 1);
+
+lines.addEventListener("pointermove", (e) => {
+  const r = lines.getBoundingClientRect();
+  const i = picker((e.clientX - r.left) * (W / r.width), (e.clientY - r.top) * (H / r.height));
+  if (i !== hov) { hov = i; drawLines(dpr()); }
+  if (i >= 0) {
+    const p = shapes[i].props;
+    tip.innerHTML = `<b>${p.state}-${p.cd}</b> <span class="tip-amt">${usdCompact(p.pac_cents)}</span>
+      ${p.map_status === "cd119_superseded"
+        ? `<span class="tip-flag">Cross-hatched — superseded map</span>` : ""}`;
+    tip.style.left = `${e.clientX}px`; tip.style.top = `${e.clientY}px`; tip.hidden = false;
+  } else tip.hidden = true;
+});
+lines.addEventListener("pointerleave", () => { hov = -1; tip.hidden = true; drawLines(dpr()); });
+lines.addEventListener("click", (e) => {
+  const r = lines.getBoundingClientRect();
+  const i = picker((e.clientX - r.left) * (W / r.width), (e.clientY - r.top) * (H / r.height));
+  if (i < 0) return;
+  sel = i; drawLines(dpr());
+  renderSheet(document.getElementById("sheet"), shapes[i], atlas.sectors, SYS, dark);
+});
+
+document.getElementById("theme").addEventListener("click", (e) => {
+  dark = !dark;
+  document.documentElement.dataset.theme = dark ? "dark" : "light";
+  e.target.setAttribute("aria-pressed", String(dark));
+  e.target.textContent = dark ? "Warm stock" : "Dark stock";
+  drawGuilloche(); drawPlate(dpr()); drawLines(dpr()); paintLegend();
+  if (sel >= 0) renderSheet(document.getElementById("sheet"), shapes[sel], atlas.sectors, SYS, dark);
+});
+document.getElementById("hatchtoggle").addEventListener("click", (e) => {
+  hatch = !hatch;
+  e.target.setAttribute("aria-pressed", String(hatch));
+  e.target.textContent = hatch ? "Cross-hatch = superseded" : "One ruling everywhere";
+  drawPlate(dpr()); paintLegend();
+});
+document.getElementById("tabletoggle").addEventListener("click", (e) => {
+  const t = document.getElementById("table");
+  t.hidden = !t.hidden;
+  e.target.setAttribute("aria-pressed", String(!t.hidden));
+  if (!t.hidden) renderTable(t, atlas.districts.features.map((f) => ({ props: f.properties })));
+});
+
+layout();
+renderSheet(document.getElementById("sheet"), null, atlas.sectors, SYS, dark);
+window.addEventListener("resize", debounce(layout, 160));
+document.getElementById("perf").textContent =
+  `data ${tLoad.toFixed(0)}ms · first paint ${(performance.now() - t0).toFixed(0)}ms`;
+</script>
+</body>
+</html>

@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Broadside — riso prototype A</title>
+<link rel="stylesheet" href="./fonts.css">
+<link rel="stylesheet" href="./shared/base.css">
+<style>
+/* ==================================================================
+   A — BROADSIDE
+   The political-poster register. Flat validated inks on warm stock,
+   one baked grain plate, and misregistration used as a MEANING rather
+   than a filter.
+
+   The correction to the v1 plan is here, and it is the whole argument
+   of this prototype: the plan offsets the FILL of an uncertain
+   district. The research paper's critique lands squarely on that —
+   districts share exact borders, so ink shifted 1.5px right lands
+   inside the neighbour and states that money is somewhere it is not.
+   But the critique does not touch the KEYLINE. What is uncertain about
+   a superseded district is its BOUNDARY, not its money. So the fill
+   stays perfectly registered and clipped, and the LINE doubles and
+   shifts. Same riso grammar, no false polygon, no moiré (there is only
+   one screen), no contrast destruction (the fill is untouched).
+   ================================================================== */
+
+:root { --paper: #F6F2E9; }
+[data-theme="dark"] { --paper: #17171A; }
+
+.stage { background: var(--paper); }
+.stage-inner { position: relative; }
+
+/* Grain is BAKED tiling PNGs at low opacity. Never an SVG filter, never a
+   per-frame canvas: nothing competes with tile fetches on cellular.
+   Three plates, 27 KB total.
+
+   TWO overlays, not one, and that is the difference between "riso" and
+   "a noise filter". A single multiply layer darkens everything and the
+   texture vanishes the moment the ink gets dark — which is exactly where
+   a real print is most textured. So:
+     multiply → ink POOLING (mottle + speckle), dark, reads on pale fills
+     screen   → paper TOOTH showing through the ink, light, reads on dark fills
+   Every riso print has both and neither alone looks like one. */
+.stage-inner::before, .stage-inner::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background-repeat: repeat;
+}
+.stage-inner::before {           /* ink pooling */
+  background-image: url("./texture/mottle-256.png"), url("./texture/speckle-256.png");
+  background-size: 256px, 256px;
+  mix-blend-mode: multiply; opacity: .70;
+}
+.stage-inner::after {            /* paper coming through the ink */
+  background-image: url("./texture/grain-128.png");
+  background-size: 128px;
+  mix-blend-mode: screen; opacity: .34;
+}
+[data-theme="dark"] .stage-inner::before { mix-blend-mode: screen; opacity: .22; }
+[data-theme="dark"] .stage-inner::after  { mix-blend-mode: multiply; opacity: .45; }
+
+svg.map { width: 100%; height: auto; display: block; }
+
+.d-fill { stroke: none; }
+
+/* The key plate. Every district gets a line; what differs is whether
+   that line is registered. */
+.d-key { fill: none; stroke: var(--keyline); stroke-width: .6; stroke-linejoin: round; }
+[data-theme="light"] { --keyline: rgba(27,27,24,.55); }
+[data-theme="dark"]  { --keyline: rgba(237,237,230,.45); }
+
+/* Superseded: the boundary is stale, so the boundary misregisters.
+   A second pass of the SAME line, offset and multiplied — which is
+   exactly what a second drum does when the paper feeds crooked. */
+.d-ghost { fill: none; stroke: var(--stale); stroke-width: 1.05; opacity: .78;
+           mix-blend-mode: multiply; transform: translate(1.6px, -1.6px); }
+[data-theme="dark"] .d-ghost { mix-blend-mode: screen; opacity: .62; }
+
+/* Contested: enacted then blocked, so cd119 still governs. The line is
+   the law but it is under argument — drawn, but broken. */
+.d-contested { fill: none; stroke: var(--contested); stroke-width: 1.05;
+               stroke-dasharray: 3.5 2.5; opacity: .85; }
+
+.d-hit { fill: transparent; cursor: pointer; }
+.d-hit:focus { outline: none; }
+
+/* The tactile press. Heavy cubic-bezier, 170ms — the inertia of a drum,
+   not the weightlessness of a CSS default. */
+.sel-mark {
+  fill: none; stroke: var(--ink); stroke-width: 2.1;
+  transition: transform 170ms cubic-bezier(.62,.03,.32,1);
+}
+.sel-mark.pressed { transform: translateY(1px); }
+@media (prefers-reduced-motion: reduce) {
+  /* Reduced motion gets DOT GAIN instead of translation: the line
+     thickens rather than moving. Same signal, no spatial change. */
+  .sel-mark { transition: stroke-width 1ms; }
+  .sel-mark.pressed { transform: none; stroke-width: 3.2; }
+}
+
+.hov-mark { fill: none; stroke: var(--ink); stroke-width: 1.4; pointer-events: none; }
+
+.legend-chip { border: .5px solid rgba(0,0,0,.2); }
+.lv-current { background: var(--keyline); height: 2px; margin-top: 7px; }
+.lv-contested { border-top: 2px dashed var(--contested); height: 0; margin-top: 7px; }
+.lv-stale {
+  height: 2px; margin-top: 7px; background: var(--stale); position: relative;
+}
+.lv-stale::after {
+  content: ""; position: absolute; inset: 0; background: var(--stale);
+  transform: translate(2px, -2.5px); opacity: .8;
+}
+
+.masthead h1 { font-size: clamp(42px, 8vw, 88px); }
+.sheet { border-width: 2px; }
+</style>
+</head>
+<body>
+<a class="skip" href="#stage">Skip to the map</a>
+<div id="shell"></div>
+<div class="controls">
+  <button class="ctl" id="theme" aria-pressed="false">Dark stock</button>
+  <button class="ctl" id="tabletoggle" aria-pressed="false">Table view</button>
+  <button class="ctl" id="regtoggle" aria-pressed="true">Registration marks</button>
+  <span class="stage-note" id="perf"></span>
+</div>
+<div class="wrap">
+  <div class="stage" id="stage">
+    <div class="stage-inner"><svg class="map" id="svg" role="img"
+      aria-label="Choropleth of PAC contributions by congressional district, 2024 cycle"></svg></div>
+    <div class="stage-note">
+      <span id="countline"></span>
+      <span id="staleline"></span>
+    </div>
+    <div class="offmap" id="offmap"></div>
+  </div>
+  <aside class="rail">
+    <div id="legend"></div>
+    <div class="sheet" id="sheet" aria-live="polite"></div>
+  </aside>
+</div>
+<div class="tablewrap" id="table" hidden></div>
+<div class="colophon">
+  <h2>Prototype A — Broadside</h2>
+  <p><strong>Thesis:</strong> registration quality encodes certainty — but on the
+  <em>keyline</em>, not the fill. A superseded district's boundary doubles and
+  shifts; its money stays exactly where it is. This answers the research paper's
+  strongest objection (offset fills bleed into the neighbour and invent a polygon)
+  without giving up the visual variable.</p>
+  <p><strong>Cost:</strong> 441 SVG paths, three baked PNG plates (27 KB), zero
+  per-frame work. Ports to MapLibre as ordinary <code>fill</code> and
+  <code>line</code> layers plus a second <code>line</code> layer filtered on
+  <code>map_status</code> with a <code>line-translate</code> — no custom layer,
+  no shader, no stencil-buffer risk.</p>
+  <p><strong>Ink:</strong> all five validated at <code>--pairs all</code> against
+  this paper; ramp validated <code>--ordinal</code>. Dark stock is selected from
+  its own validated set, never flipped.</p>
+</div>
+
+<script src="./vendor/d3-array.min.js"></script>
+<script src="./vendor/d3-geo.min.js"></script>
+<script type="module">
+import { A, densityStep, certaintyClass, usdCompact, usd } from "./shared/inks.js";
+import { loadAtlas, makeProjection, projectAll, measure, makePicker, partitionProjectable,
+         renderOffmap, renderSheet, renderTable, renderLegend, shellHTML, debounce } from "./shared/atlas.js";
+
+const SYS = A;
+const svg = document.getElementById("svg");
+let dark = false, shapes = [], picker = null, sel = -1, hov = -1, showReg = true;
+let W = 0, H = 0, atlas = null, paths = [];
+
+const t0 = performance.now();
+atlas = await loadAtlas();
+const tLoad = performance.now() - t0;
+
+document.getElementById("shell").innerHTML = shellHTML({
+  kicker: "follow the donors · prototype A",
+  title: "Broadside",
+  thesis: "Federal PAC money, one district at a time. Where the line doubles, the boundary is stale — a new map is the law and we cannot draw it yet.",
+  meta: atlas.meta,
+});
+document.getElementById("countline").textContent = "SVG + CSS · no WebGL";
+document.getElementById("staleline").textContent =
+  `${atlas.meta.status_counts.cd119_superseded} districts drawn off a superseded map`;
+
+let offmap = [];
+function layout() {
+  const box = document.getElementById("stage").getBoundingClientRect();
+  W = Math.max(320, Math.round(box.width));
+  H = Math.round(W * 0.60);
+  // Territory delegations first: left in, they clip to the composite's full
+  // rectangle and paint over the entire map — and they poison fitExtent.
+  const part = partitionProjectable(atlas.districts);
+  offmap = part.offmap;
+  const proj = makeProjection(part.mapped, W, H);
+  shapes = measure(projectAll(part.mapped, proj));
+  const geoPath = d3.geoPath(proj);
+  paths = part.mapped.features.map((f) => geoPath(f) || "");
+  picker = makePicker(shapes, W, H, 1);
+  draw();
+  renderOffmap(document.getElementById("offmap"), offmap, SYS, dark, (geoid) => {
+    const f = offmap.find((x) => x.properties.geoid === geoid);
+    renderSheet(document.getElementById("sheet"), { props: f.properties }, atlas.sectors, SYS, dark);
+  });
+}
+
+function draw() {
+  const ramp = dark ? SYS.rampDark : SYS.ramp;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  const fills = [], keys = [], ghosts = [], hits = [];
+  shapes.forEach((s, i) => {
+    const p = s.props, d = paths[i];
+    if (!d) return;
+    fills.push(`<path class="d-fill" d="${d}" fill="${densityStep(p.pac_cents, ramp)}"/>`);
+    keys.push(`<path class="d-key" d="${d}"/>`);
+    if (showReg) {
+      const cls = certaintyClass(p.map_status);
+      if (cls === "riso-offregister") ghosts.push(`<path class="d-ghost" d="${d}"/>`);
+      else if (cls === "riso-contested") ghosts.push(`<path class="d-contested" d="${d}"/>`);
+    }
+    hits.push(`<path class="d-hit" d="${d}" data-i="${i}" tabindex="0" role="button"
+      aria-label="${p.state} district ${p.cd}, ${usd(p.pac_cents)}"></path>`);
+  });
+  svg.innerHTML = `<g>${fills.join("")}</g><g>${keys.join("")}</g>
+    <g>${ghosts.join("")}</g><g id="marks"></g><g>${hits.join("")}</g>`;
+  paintMarks();
+  renderLegend(document.getElementById("legend"), SYS, dark);
+  document.querySelectorAll(".legend-chip").forEach((el, i) => {
+    el.style.background = ramp[i];
+  });
+}
+
+function paintMarks() {
+  const g = document.getElementById("marks");
+  if (!g) return;
+  let out = "";
+  if (hov >= 0 && hov !== sel) out += `<path class="hov-mark" d="${paths[hov]}"/>`;
+  if (sel >= 0) out += `<path class="sel-mark pressed" d="${paths[sel]}"/>`;
+  g.innerHTML = out;
+}
+
+const tip = Object.assign(document.createElement("div"), { className: "tip" });
+tip.hidden = true; document.body.appendChild(tip);
+
+function showTip(i, x, y) {
+  const p = shapes[i].props;
+  const stale = p.map_status === "cd119_superseded";
+  tip.innerHTML = `<b>${p.state}-${p.cd}</b> <span class="tip-amt">${usdCompact(p.pac_cents)}</span>
+    ${stale ? `<span class="tip-flag">Superseded map — boundary is not current law</span>` : ""}`;
+  tip.style.left = `${x}px`; tip.style.top = `${y}px`; tip.hidden = false;
+}
+
+svg.addEventListener("pointermove", (e) => {
+  const r = svg.getBoundingClientRect();
+  const i = picker((e.clientX - r.left) * (W / r.width), (e.clientY - r.top) * (H / r.height));
+  if (i !== hov) { hov = i; paintMarks(); }
+  if (i >= 0) showTip(i, e.clientX, e.clientY); else tip.hidden = true;
+});
+svg.addEventListener("pointerleave", () => { hov = -1; tip.hidden = true; paintMarks(); });
+svg.addEventListener("click", (e) => {
+  const t = e.target.closest(".d-hit");
+  if (!t) return;
+  select(+t.dataset.i);
+});
+svg.addEventListener("keydown", (e) => {
+  const t = e.target.closest(".d-hit");
+  if (!t || (e.key !== "Enter" && e.key !== " ")) return;
+  e.preventDefault(); select(+t.dataset.i);
+});
+svg.addEventListener("focusin", (e) => {
+  const t = e.target.closest(".d-hit");
+  if (!t) return;
+  hov = +t.dataset.i; paintMarks();
+  const s = shapes[hov], r = svg.getBoundingClientRect();
+  showTip(hov, r.left + s.centroid[0] * (r.width / W), r.top + s.centroid[1] * (r.height / H));
+});
+
+function select(i) {
+  sel = i; paintMarks();
+  renderSheet(document.getElementById("sheet"), shapes[i], atlas.sectors, SYS, dark);
+}
+
+document.getElementById("theme").addEventListener("click", (e) => {
+  dark = !dark;
+  document.documentElement.dataset.theme = dark ? "dark" : "light";
+  e.target.setAttribute("aria-pressed", String(dark));
+  e.target.textContent = dark ? "Warm stock" : "Dark stock";
+  draw();
+  if (sel >= 0) renderSheet(document.getElementById("sheet"), shapes[sel], atlas.sectors, SYS, dark);
+});
+document.getElementById("regtoggle").addEventListener("click", (e) => {
+  showReg = !showReg;
+  e.target.setAttribute("aria-pressed", String(showReg));
+  draw();
+});
+document.getElementById("tabletoggle").addEventListener("click", (e) => {
+  const t = document.getElementById("table");
+  t.hidden = !t.hidden;
+  e.target.setAttribute("aria-pressed", String(!t.hidden));
+  if (!t.hidden) renderTable(t, atlas.districts.features.map((f) => ({ props: f.properties })));
+});
+
+layout();
+renderSheet(document.getElementById("sheet"), null, atlas.sectors, SYS, dark);
+window.addEventListener("resize", debounce(layout, 160));
+document.getElementById("perf").textContent =
+  `data ${(tLoad).toFixed(0)}ms · first paint ${(performance.now() - t0).toFixed(0)}ms`;
+</script>
+</body>
+</html>

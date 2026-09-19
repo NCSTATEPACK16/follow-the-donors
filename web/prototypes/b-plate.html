@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Plate — riso prototype B</title>
+<link rel="stylesheet" href="./fonts.css">
+<link rel="stylesheet" href="./shared/base.css">
+<style>
+/* ==================================================================
+   B — PLATE
+   The research paper's recommendation, executed rather than summarised.
+
+   Certainty is SCREEN FREQUENCY, not registration. A district whose
+   boundary is current prints at a fine screen and reads as solid; a
+   district drawn from a superseded map prints coarse and visibly
+   breaks into dots. Registration stays perfect, so no ink crosses a
+   border and no false polygon is invented — which is the paper's
+   objection to misregistration, and it is a fair one.
+
+   Two drums. The tonal range is built the way a real two-colour riso
+   builds it: the green plate inks up across the bottom half of the
+   range, then the blue plate lays on top across the upper half, and
+   the deep tones are an OVERPRINT rather than a picked swatch. Mixing
+   is Kubelka-Munk in the fragment shader, not multiply — which also
+   sidesteps the iOS compositing bug that breaks mix-blend-mode on a
+   promoted layer.
+   ================================================================== */
+:root { --paper: #F5F3EE; }
+[data-theme="dark"] { --paper: #17171A; }
+
+.stage-inner { position: relative; background: var(--paper); }
+.stage-inner canvas { display: block; width: 100%; height: auto; }
+#lines { position: absolute; inset: 0; }
+
+/* Only the paper tooth here — the halftone IS the texture, and adding
+   mottle on top of a dot screen reads as dirt, not as print. */
+.stage-inner::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background-image: url("./texture/grain-128.png"); background-size: 128px;
+  mix-blend-mode: multiply; opacity: .30;
+}
+[data-theme="dark"] .stage-inner::after { mix-blend-mode: screen; opacity: .16; }
+
+.legend-chip { border: none; background: none !important; }
+.legend-chip canvas { width: 30px; height: 13px; display: block; }
+.lv-mark { border: 1px solid var(--rule); }
+.lv-current   { background: repeating-linear-gradient(90deg, var(--ink) 0 1px, transparent 1px 2px); }
+.lv-contested { background: repeating-linear-gradient(90deg, var(--ink) 0 2px, transparent 2px 5px); }
+.lv-stale     { background: repeating-linear-gradient(90deg, var(--ink) 0 3px, transparent 3px 9px); }
+.masthead h1 { font-size: clamp(42px, 8vw, 88px); }
+.nogl { padding: 30px; border: 2px solid var(--stale); color: var(--stale); font-size: 13px; }
+</style>
+</head>
+<body>
+<a class="skip" href="#stage">Skip to the map</a>
+<div id="shell"></div>
+<div class="controls">
+  <button class="ctl" id="theme" aria-pressed="false">Dark stock</button>
+  <button class="ctl" id="tabletoggle" aria-pressed="false">Table view</button>
+  <button class="ctl" id="lpitoggle" aria-pressed="true">Screen frequency = certainty</button>
+  <span class="stage-note" id="perf"></span>
+</div>
+<div class="wrap">
+  <div class="stage" id="stage">
+    <div class="stage-inner">
+      <canvas id="gl" role="img"
+        aria-label="Halftone choropleth of PAC contributions by congressional district, 2024 cycle"></canvas>
+      <canvas id="lines" aria-hidden="true"></canvas>
+    </div>
+    <div class="stage-note">
+      <span id="countline"></span><span id="staleline"></span>
+    </div>
+    <div class="offmap" id="offmap"></div>
+  </div>
+  <aside class="rail">
+    <div id="legend"></div>
+    <div class="sheet" id="sheet" aria-live="polite"></div>
+  </aside>
+</div>
+<div class="tablewrap" id="table" hidden></div>
+<div class="colophon">
+  <h2>Prototype B — Plate</h2>
+  <p><strong>Thesis:</strong> screen frequency encodes certainty. Fine screen =
+  the map that governs; coarse, visibly broken screen = a district drawn off a
+  map that is no longer the law. Registration stays perfect, so no ink crosses
+  a district border — the objection that sinks misregistration-as-certainty
+  does not apply here.</p>
+  <p><strong>Cost:</strong> one WebGL2 draw call over a static mesh
+  (triangulated once on layout, never per frame), plus a Canvas2D pass for the
+  keylines. Kubelka-Munk overprint is ~20 lines of GLSL and replaces
+  <code>mix-blend-mode</code>, which silently stops compositing on promoted
+  layers in WebKit.</p>
+  <p><strong>Port risk:</strong> this is the expensive one. On MapLibre it
+  becomes a <code>CustomLayerInterface</code> that has to use
+  <code>projectTile()</code> and restore the stencil state, or district
+  outlines and labels drop out. That risk is real and is the thing to weigh
+  against how much better it looks.</p>
+</div>
+
+<script src="./vendor/d3-array.min.js"></script>
+<script src="./vendor/d3-geo.min.js"></script>
+<script src="./vendor/earcut.min.js"></script>
+<script type="module">
+import { B, coverage, usdCompact, usd, SCREEN_ANGLES } from "./shared/inks.js";
+import { halftoneRect } from "./shared/screens.js";
+import { loadAtlas, makeProjection, projectAll, measure, makePicker, partitionProjectable,
+         triangulate, renderOffmap, renderSheet, renderTable, renderLegend,
+         shellHTML, debounce } from "./shared/atlas.js";
+
+const SYS = B;
+/* Screen frequency per map vintage, in CSS pixels per halftone cell.
+   Smaller cell = finer screen = more certain. The three are deliberately far
+   apart: a difference a reader cannot see is not an encoding. */
+/* Tuned down from 4.2 / 7.0 / 11.5 after looking at the first render: at 11.5
+   the coarse screen read as polka dots and pulled the eye away from the money
+   entirely. These three are still far enough apart to be read as three
+   different screens, which is the requirement — a difference a reader cannot
+   see is not an encoding. */
+const CELL = { cd119_current: 3.6, cd119_contested: 5.6, cd119_superseded: 8.4 };
+const FLAT_CELL = 3.6;
+
+const VERT = `#version 300 es
+in vec2 aPos; in float aCov; in float aCell;
+uniform vec2 uRes;
+out float vCov; out float vCell;
+void main() {
+  vCov = aCov; vCell = aCell;
+  vec2 c = (aPos / uRes) * 2.0 - 1.0;
+  gl_Position = vec4(c.x, -c.y, 0.0, 1.0);
+}`;
+
+const FRAG = `#version 300 es
+precision highp float;
+in float vCov; in float vCell;
+uniform vec3 uPaper, uInkA, uInkB;
+uniform float uAngA, uAngB, uDpr, uDark;
+out vec4 outColor;
+
+/* One halftone plate. The screen lives in SCREEN space, not map space —
+   that is what makes it a print rather than a texture painted on the data.
+   Antialiasing is the true gradient magnitude rather than fwidth(): fwidth
+   is the sum of |dFdx| and |dFdy| and is noticeably anisotropic on the
+   diagonals, which is exactly where these rosettes sit. */
+float plate(vec2 frag, float angle, float cellPx, float cov) {
+  if (cov <= 0.0) return 0.0;
+  float s = sin(angle), c = cos(angle);
+  vec2 r = mat2(c, -s, s, c) * frag;
+  vec2 cell = fract(r / (cellPx * uDpr)) - 0.5;
+  float d = length(cell);
+  // Dot area scales with coverage, so perceived tone tracks the number.
+  // 0.707 is the half-diagonal: at coverage 1.0 the dot closes the cell.
+  float radius = sqrt(cov) * 0.707;
+  float aa = length(vec2(dFdx(d), dFdy(d)));
+  return 1.0 - smoothstep(radius - aa, radius + aa, d);
+}
+
+/* Kubelka-Munk, single constant, per channel.
+   K/S = (1-R)^2 / 2R  and its inverse  R = 1 + k - sqrt(k*k + 2k).
+   Absorption adds linearly with ink concentration, which is why two
+   translucent inks give a deep, slightly warm third colour instead of the
+   dead grey that naive RGB multiply produces. */
+vec3 ks(vec3 r) { r = clamp(r, 0.004, 0.996); return (1.0 - r) * (1.0 - r) / (2.0 * r); }
+vec3 unks(vec3 k) { return 1.0 + k - sqrt(k * k + 2.0 * k); }
+
+void main() {
+  vec2 frag = gl_FragCoord.xy;
+  float cell = vCell;
+  // Two drums: green inks up over the bottom half of the range, blue lays
+  // on top over the upper half. The dark end is an OVERPRINT, not a swatch.
+  float covA = clamp(vCov * 2.0, 0.0, 1.0);
+  float covB = clamp((vCov - 0.5) * 2.0, 0.0, 1.0);
+  float a = plate(frag, uAngA, cell, covA);
+  float b = plate(frag, uAngB, cell, covB);
+  /* Kubelka-Munk has no dark mode, and that is a fact about the medium
+     rather than a bug to route around. Subtractive ink math assumes a
+     REFLECTIVE substrate: ink removes light that the paper would have
+     returned. On a dark ground there is nothing to remove, so every
+     overprint collapses to black — which is exactly what the first dark
+     render of this prototype did.
+
+     So dark mode composites ADDITIVELY and says so. It is no longer a
+     simulation of ink on paper; it is a simulation of light through a
+     screen, which is what a dark UI actually is. The dark ink values are
+     separately validated against the dark surface — dark mode is
+     SELECTED, never an inversion of the light ramp. */
+  vec3 col;
+  if (uDark > 0.5) {
+    col = uPaper + a * uInkA * 0.95 + b * uInkB * 0.95;
+  } else {
+    vec3 k = ks(uPaper) + a * ks(uInkA) * 1.35 + b * ks(uInkB) * 1.35;
+    col = unks(k);
+  }
+  outColor = vec4(clamp(col, 0.0, 1.0), 1.0);
+}`;
+
+const hex2rgb = (h) => [1, 3, 5].map((i) => parseInt(h.substr(i, 2), 16) / 255);
+
+let dark = false, shapes = [], picker = null, sel = -1, hov = -1, useLPI = true;
+let W = 0, H = 0, atlas = null, offmap = [], mesh = null, gl = null, prog = null, buf = null;
+const glc = document.getElementById("gl");
+const lines = document.getElementById("lines");
+
+const t0 = performance.now();
+atlas = await loadAtlas();
+const tLoad = performance.now() - t0;
+
+document.getElementById("shell").innerHTML = shellHTML({
+  kicker: "follow the donors · prototype B",
+  title: "Plate",
+  thesis: "Federal PAC money, printed. The dot size is the money; how coarse the screen is, is how sure we are the district is still shaped like that.",
+  meta: atlas.meta,
+});
+document.getElementById("countline").textContent = "WebGL2 halftone · two plates · Kubelka-Munk overprint";
+document.getElementById("staleline").textContent =
+  `${atlas.meta.status_counts.cd119_superseded} districts printed coarse`;
+
+function initGL() {
+  gl = glc.getContext("webgl2", { antialias: true, alpha: false });
+  if (!gl) return false;
+  const sh = (t, src) => {
+    const s = gl.createShader(t); gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+    return s;
+  };
+  prog = gl.createProgram();
+  gl.attachShader(prog, sh(gl.VERTEX_SHADER, VERT));
+  gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, FRAG));
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+  buf = gl.createBuffer();
+  return true;
+}
+
+function layout() {
+  const box = document.getElementById("stage").getBoundingClientRect();
+  W = Math.max(320, Math.round(box.width));
+  H = Math.round(W * 0.60);
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  for (const cv of [glc, lines]) {
+    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+    cv.style.width = `${W}px`; cv.style.height = `${H}px`;
+  }
+  const part = partitionProjectable(atlas.districts);
+  offmap = part.offmap;
+  const proj = makeProjection(part.mapped, W, H);
+  shapes = measure(projectAll(part.mapped, proj));
+  mesh = triangulate(part.mapped, proj, (p) => ({
+    coverage: coverage(p.pac_cents),
+    cell: useLPI ? (CELL[p.map_status] ?? FLAT_CELL) : FLAT_CELL,
+  }));
+  picker = makePicker(shapes, W, H, 1);
+  draw(dpr);
+  renderOffmap(document.getElementById("offmap"), offmap, SYS, dark, (geoid) => {
+    const f = offmap.find((x) => x.properties.geoid === geoid);
+    renderSheet(document.getElementById("sheet"), { props: f.properties }, atlas.sectors, SYS, dark);
+  });
+}
+
+function draw(dpr = Math.min(2, window.devicePixelRatio || 1)) {
+  if (!gl) return;
+  const paper = dark ? SYS.paperDark : SYS.paper;
+  gl.viewport(0, 0, glc.width, glc.height);
+  const pr = hex2rgb(paper);
+  gl.clearColor(pr[0], pr[1], pr[2], 1); gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.useProgram(prog);
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, mesh.data, gl.STATIC_DRAW);
+  const stride = 16;
+  const aPos = gl.getAttribLocation(prog, "aPos");
+  const aCov = gl.getAttribLocation(prog, "aCov");
+  const aCell = gl.getAttribLocation(prog, "aCell");
+  gl.enableVertexAttribArray(aPos); gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, stride, 0);
+  gl.enableVertexAttribArray(aCov); gl.vertexAttribPointer(aCov, 1, gl.FLOAT, false, stride, 8);
+  gl.enableVertexAttribArray(aCell); gl.vertexAttribPointer(aCell, 1, gl.FLOAT, false, stride, 12);
+  gl.uniform2f(gl.getUniformLocation(prog, "uRes"), W, H);
+  gl.uniform1f(gl.getUniformLocation(prog, "uDpr"), dpr);
+  gl.uniform3fv(gl.getUniformLocation(prog, "uPaper"), hex2rgb(paper));
+  gl.uniform1f(gl.getUniformLocation(prog, "uDark"), dark ? 1 : 0);
+  gl.uniform3fv(gl.getUniformLocation(prog, "uInkA"),
+    hex2rgb(dark ? SYS.platesDark.color : SYS.plates.color));
+  gl.uniform3fv(gl.getUniformLocation(prog, "uInkB"),
+    hex2rgb(dark ? SYS.platesDark.second : SYS.plates.second));
+  gl.uniform1f(gl.getUniformLocation(prog, "uAngA"), SCREEN_ANGLES.color * Math.PI / 180);
+  gl.uniform1f(gl.getUniformLocation(prog, "uAngB"), SCREEN_ANGLES.second * Math.PI / 180);
+  gl.drawArrays(gl.TRIANGLES, 0, mesh.count);
+  drawLines(dpr);
+  paintLegend();
+}
+
+function drawLines(dpr) {
+  const ctx = lines.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  const trace = (s) => {
+    ctx.beginPath();
+    for (const r of s.rings) {
+      ctx.moveTo(r.xy[0], r.xy[1]);
+      for (let k = 2; k < r.xy.length; k += 2) ctx.lineTo(r.xy[k], r.xy[k + 1]);
+      ctx.closePath();
+    }
+  };
+  // Registration is PERFECT here. The keyline is one weight for every
+  // district: the uncertainty is carried entirely by the screen.
+  ctx.lineWidth = 0.75; ctx.lineJoin = "round";
+  ctx.strokeStyle = dark ? "rgba(237,237,230,.50)" : "rgba(27,27,24,.62)";
+  for (const s of shapes) { trace(s); ctx.stroke(); }
+  if (hov >= 0 && hov !== sel) {
+    ctx.lineWidth = 1.5; ctx.strokeStyle = dark ? "#EDEDE6" : "#1b1b18";
+    trace(shapes[hov]); ctx.stroke();
+  }
+  if (sel >= 0) {
+    ctx.lineWidth = 2.2; ctx.strokeStyle = dark ? "#EDEDE6" : "#1b1b18";
+    trace(shapes[sel]); ctx.stroke();
+  }
+}
+
+/* The legend renders REAL halftone swatches from the same shader path, so a
+   reader compares like with like. A flat chip beside a dotted map is a lie
+   about what they are looking at. */
+function paintLegend() {
+  renderLegend(document.getElementById("legend"), SYS, dark, {
+    staleLabel: "Superseded — printed coarse; a redraw is in effect and we cannot draw it",
+  });
+  document.querySelectorAll(".legend-chip").forEach((el, i) => {
+    const cv = document.createElement("canvas");
+    const w = 60, h = 26;
+    cv.width = w; cv.height = h;
+    const c = cv.getContext("2d");
+    c.fillStyle = dark ? SYS.paperDark : SYS.paper; c.fillRect(0, 0, w, h);
+    const cov = 0.20 + (i / 5) * (0.88 - 0.20);
+    const covA = Math.min(1, cov * 2), covB = Math.max(0, (cov - 0.5) * 2);
+    const pl = dark ? SYS.platesDark : SYS.plates;
+    // Additive in dark mode, matching the shader — a legend that composites
+    // differently from the map is a legend for a different map.
+    c.globalCompositeOperation = dark ? "lighter" : "source-over";
+    halftoneRect(c, 0, 0, w, h, pl.color, SCREEN_ANGLES.color, covA, 8.4);
+    halftoneRect(c, 0, 0, w, h, pl.second, SCREEN_ANGLES.second, covB, 8.4);
+    c.globalCompositeOperation = "source-over";
+    el.innerHTML = ""; el.appendChild(cv);
+  });
+}
+
+const tip = Object.assign(document.createElement("div"), { className: "tip" });
+tip.hidden = true; document.body.appendChild(tip);
+
+lines.style.pointerEvents = "auto";
+lines.addEventListener("pointermove", (e) => {
+  const r = lines.getBoundingClientRect();
+  const i = picker((e.clientX - r.left) * (W / r.width), (e.clientY - r.top) * (H / r.height));
+  if (i !== hov) { hov = i; drawLines(Math.min(2, window.devicePixelRatio || 1)); }
+  if (i >= 0) {
+    const p = shapes[i].props;
+    tip.innerHTML = `<b>${p.state}-${p.cd}</b> <span class="tip-amt">${usdCompact(p.pac_cents)}</span>
+      ${p.map_status === "cd119_superseded"
+        ? `<span class="tip-flag">Coarse screen — superseded map</span>` : ""}`;
+    tip.style.left = `${e.clientX}px`; tip.style.top = `${e.clientY}px`; tip.hidden = false;
+  } else tip.hidden = true;
+});
+lines.addEventListener("pointerleave", () => {
+  hov = -1; tip.hidden = true; drawLines(Math.min(2, window.devicePixelRatio || 1));
+});
+lines.addEventListener("click", (e) => {
+  const r = lines.getBoundingClientRect();
+  const i = picker((e.clientX - r.left) * (W / r.width), (e.clientY - r.top) * (H / r.height));
+  if (i < 0) return;
+  sel = i; drawLines(Math.min(2, window.devicePixelRatio || 1));
+  renderSheet(document.getElementById("sheet"), shapes[i], atlas.sectors, SYS, dark);
+});
+
+document.getElementById("theme").addEventListener("click", (e) => {
+  dark = !dark;
+  document.documentElement.dataset.theme = dark ? "dark" : "light";
+  e.target.setAttribute("aria-pressed", String(dark));
+  e.target.textContent = dark ? "Warm stock" : "Dark stock";
+  draw();
+  if (sel >= 0) renderSheet(document.getElementById("sheet"), shapes[sel], atlas.sectors, SYS, dark);
+});
+document.getElementById("lpitoggle").addEventListener("click", (e) => {
+  useLPI = !useLPI;
+  e.target.setAttribute("aria-pressed", String(useLPI));
+  e.target.textContent = useLPI ? "Screen frequency = certainty" : "One screen everywhere";
+  layout();
+});
+document.getElementById("tabletoggle").addEventListener("click", (e) => {
+  const t = document.getElementById("table");
+  t.hidden = !t.hidden;
+  e.target.setAttribute("aria-pressed", String(!t.hidden));
+  if (!t.hidden) renderTable(t, atlas.districts.features.map((f) => ({ props: f.properties })));
+});
+
+if (!initGL()) {
+  document.getElementById("stage").innerHTML =
+    `<div class="nogl">No WebGL2 on this device. That is the honest failure mode for
+     this prototype and it is part of what is being weighed: prototype A needs
+     nothing but SVG and renders the same data everywhere.</div>`;
+  // The fallback removes the stage, and with it #offmap. Any control that
+  // re-runs layout() would then write innerHTML to null. Disable the ones
+  // that touch the map and leave the table, which still works — a degraded
+  // page must degrade all the way, not leave a live button over a hole.
+  for (const id of ["theme", "lpitoggle"]) {
+    const el = document.getElementById(id);
+    if (el) { el.disabled = true; el.title = "Needs WebGL2"; }
+  }
+  document.getElementById("perf").textContent = "WebGL2 unavailable";
+  renderLegend(document.getElementById("legend"), SYS, false, {
+    staleLabel: "Superseded — a redraw is in effect and we cannot draw it",
+  });
+  renderSheet(document.getElementById("sheet"), null, atlas.sectors, SYS, false);
+} else {
+  layout();
+  renderSheet(document.getElementById("sheet"), null, atlas.sectors, SYS, dark);
+  window.addEventListener("resize", debounce(layout, 160));
+  const t1 = performance.now();
+  document.getElementById("perf").textContent =
+    `data ${tLoad.toFixed(0)}ms · mesh ${mesh.count.toLocaleString()} verts · first paint ${(t1 - t0).toFixed(0)}ms`;
+}
+</script>
+</body>
+</html>

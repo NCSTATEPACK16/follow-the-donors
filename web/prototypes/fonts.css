@@ -1,0 +1,16 @@
+/* Self-hosted OFL faces. Instrument Serif/Sans and Bodoni Moda are
+   SIL Open Font License 1.1; Xanh Mono likewise. All four are free for
+   commercial use, which an ad-supported site requires. Latin subset only. */
+@font-face{font-family:'Instrument Serif';font-style:italic;font-weight:400;font-display:swap;src:url('./fonts/InstrumentSerif-italic-26082c73.woff2') format('woff2');}
+@font-face{font-family:'Instrument Serif';font-style:normal;font-weight:400;font-display:swap;src:url('./fonts/InstrumentSerif-normal-c008db4e.woff2') format('woff2');}
+@font-face{font-family:'Instrument Sans';font-style:italic;font-weight:400;font-display:swap;src:url('./fonts/InstrumentSans-italic-249d24d5.woff2') format('woff2');}
+@font-face{font-family:'Instrument Sans';font-style:normal;font-weight:400;font-display:swap;src:url('./fonts/InstrumentSans-normal-e35fad09.woff2') format('woff2');}
+@font-face{font-family:'Instrument Sans';font-style:normal;font-weight:500;font-display:swap;src:url('./fonts/InstrumentSans-normal-e35fad09.woff2') format('woff2');}
+@font-face{font-family:'Instrument Sans';font-style:normal;font-weight:600;font-display:swap;src:url('./fonts/InstrumentSans-normal-e35fad09.woff2') format('woff2');}
+@font-face{font-family:'Instrument Sans';font-style:normal;font-weight:700;font-display:swap;src:url('./fonts/InstrumentSans-normal-e35fad09.woff2') format('woff2');}
+@font-face{font-family:'Bodoni Moda';font-style:italic;font-weight:400;font-display:swap;src:url('./fonts/BodoniModa-italic-652748ac.woff2') format('woff2');}
+@font-face{font-family:'Bodoni Moda';font-style:normal;font-weight:400;font-display:swap;src:url('./fonts/BodoniModa-normal-2c2bff3f.woff2') format('woff2');}
+@font-face{font-family:'Bodoni Moda';font-style:normal;font-weight:600;font-display:swap;src:url('./fonts/BodoniModa-normal-2c2bff3f.woff2') format('woff2');}
+@font-face{font-family:'Bodoni Moda';font-style:normal;font-weight:800;font-display:swap;src:url('./fonts/BodoniModa-normal-2c2bff3f.woff2') format('woff2');}
+@font-face{font-family:'Xanh Mono';font-style:italic;font-weight:400;font-display:swap;src:url('./fonts/XanhMono-italic-5da422fb.woff2') format('woff2');}
+@font-face{font-family:'Xanh Mono';font-style:normal;font-weight:400;font-display:swap;src:url('./fonts/XanhMono-normal-39f9f9ed.woff2') format('woff2');}
