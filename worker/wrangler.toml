@@ -1,0 +1,20 @@
+# Static-asset Worker in front of the R2 bucket that Phase 7
+# (scripts/11_upload_r2.py) publishes to. This repo has no R2 credentials
+# yet -- CLAUDE.md's Phase 7 blocker -- so `bucket_name` below is a
+# placeholder. Do not deploy this Worker until Phase 7 has actually run and
+# a real bucket exists; see the Worker's own file for what it does and does
+# not do.
+name = "follow-the-donors"
+main = "src/index.ts"
+compatibility_date = "2025-09-19"
+
+# No routes/custom domain bound here on purpose -- wiring DNS is a Phase 7
+# decision made with the user, not something to default silently.
+
+[[r2_buckets]]
+binding = "ARTIFACTS"
+bucket_name = "follow-the-donors-artifacts"  # placeholder; set at Phase 7
+
+# $0 infrastructure (CLAUDE.md): Workers' free tier is 100,000 requests/day,
+# which this static-asset path is nowhere near. No KV, no Durable Objects,
+# no paid add-on -- there is nothing here to bill for beyond R2 itself.
