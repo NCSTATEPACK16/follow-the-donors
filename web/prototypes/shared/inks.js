@@ -148,9 +148,133 @@ export const C = {
   keyDark: "#C9D4E8",
 };
 
-export const SYSTEMS = { a: A, b: B, c: C };
+/* ================================================================== */
+/*  ROUND 2 — D, E, F.                                                 */
+/*                                                                     */
+/*  Every value below is SOLVED, not chosen, and solved against the    */
+/*  tone the PLATES ACTUALLY PRINT rather than against a swatch — see  */
+/*  plateTone() and COMPARISON.md §8. The `ramp` a legend draws is      */
+/*  derived from the plates at load, so a legend that disagrees with    */
+/*  the map is no longer expressible.                                   */
+/*                                                                     */
+/*  What each one passes, and where it stops, is recorded per system.   */
+/*  None of these is "all checks pass": two of the three encode a      */
+/*  second variable in a channel that the money axis itself dims.       */
+/* ================================================================== */
 
-/* ------------------------------------------------------------------ */
+/**
+ * D — THREE-PLATE. Money only, extended tonal range.
+ *
+ * ordinal PASS · surface #F5F3EE · pale end #88b8a0 at 2.01:1 · every
+ * adjacent gap >= 0.06 · dark PASS (used reversed) · dim end at 2.03:1.
+ *
+ * SINGLE HUE IS DELIBERATELY FAILED — hue spread 73°, against a 40° gate.
+ * That is D's whole thesis and it is a departure taken on the record: the
+ * three plates ARE three hues, lightness alone carries the order, and hue
+ * rides along as a secondary channel the way viridis does. The gate exists
+ * to stop a rainbow where hue does the encoding; here it does not. Monotone
+ * L and the step gaps — the checks that actually carry the ordering — pass
+ * unaided.
+ */
+export const D = {
+  id: "d", name: "Three-Plate",
+  paper: "#F5F3EE", paperDark: "#17171A",
+  inks: B.inks, other: "#6B6B66", inksDark: B.inksDark,
+  plates: { first: "#0C8152", second: "#1F769F", third: "#1D3681" },
+  platesDark: { first: "#3B895D", second: "#3F7D9A", third: "#3A518A" },
+  // The composite coverage per money step. NOT linear: the steps are spaced
+  // to be equal in PERCEIVED LIGHTNESS, which is the only spacing under
+  // which six quantile classes read as six.
+  table: [0.4625, 0.5943, 0.7048, 0.7983, 0.8386, 0.88],
+  tableDark: [0.4375, 0.5878, 0.6625, 0.7196, 0.8043, 0.88],
+  plateOrder: ["first", "second", "third"],
+  split: (t, n = 3) => seqWeights(t, n),
+};
+
+/**
+ * E — TILT. Bivariate: lightness is money, hue is REP/DEM tilt.
+ *
+ * ordinal PASS at EVERY tilt, light and dark — pure REP, pure DEM, the
+ * neutral midpoint, 80/20 either way, 50/50. That is the point of solving
+ * the inks for their PRINTED lightness rather than their own: inks equal in
+ * OKLab L do not print equal, because Kubelka-Munk mixes per channel, and
+ * until they did the money axis moved when the tilt did.
+ *
+ * THE TILT IS ONLY LEGIBLE AT THE TOP OF THE MONEY RANGE. Measured, the
+ * REP↔DEM pair clears the 15 normal-vision floor and the 8 CVD target at
+ * steps 4 and 5 only:
+ *
+ *     step   0     1     2     3     4     5
+ *     normal 6.5   9.1  11.9  14.6  17.7  20.9
+ *     CVD    5.4   7.5   9.8  11.9  14.4  17.1
+ *
+ * That is 147 of 441 districts (33.3%), holding $197.4M of $328.8M (60.0%).
+ * On the other 294 the hue is there and is not readable, and this is not a
+ * tuning failure: lightness encodes money by putting LESS INK on a poorer
+ * district, and less ink is less hue. A bivariate map dims its second
+ * variable exactly where its first is smallest. The chroma above is the
+ * HIGHEST that still passes the money axis, which is the opposite of
+ * round-1 correction #3 and deliberately so — there chroma was decoration,
+ * here it is the data.
+ */
+export const E = {
+  id: "e", name: "Tilt",
+  paper: "#F5F3EE", paperDark: "#17171A",
+  inks: B.inks, other: "#6B6B66", inksDark: B.inksDark,
+  plates: { rep: "#6C0000", neutral: "#32312A", dem: "#00297E" },
+  platesDark: { rep: "#F58D7E", neutral: "#AFACA4", dem: "#83AFFF" },
+  table: [0.34, 0.4549, 0.568, 0.6762, 0.7794, 0.88],
+  tableDark: [0.3175, 0.4253, 0.5355, 0.6457, 0.7619, 0.88],
+  plateOrder: ["rep", "neutral", "dem"],
+  // The diverging midpoint is GRAY ON PURPOSE and is exempt from the chroma
+  // floor; a diverging scale whose middle has a hue is a rainbow.
+  gray: ["neutral"],
+  legible: [4, 5],
+  // The legend's money swatches are the NEUTRAL mix: what the money axis
+  // looks like with no tilt in it. Drawing them at an even three-plate mix
+  // would show a colour no district can have.
+  rampWeights: () => [0, 1, 0],
+};
+
+/**
+ * F — SECTOR PLATES. The colour IS the donor mix.
+ *
+ * ordinal PASS at every mix, light and dark — the money axis is sound.
+ *
+ * THE MIX IS NOT READABLE FROM COLOUR AT ANY MONEY LEVEL, and that is F's
+ * result rather than a defect to be tuned out. Corporate ↔ Trade ↔ Labor,
+ * measured on the printed composite:
+ *
+ *     step   0     1     2     3     4     5
+ *     normal 4.7   6.6   8.2  10.0  11.5  13.0     (floor 15, hard)
+ *     CVD    1.7   2.4   3.0   3.7   4.2   4.6     (target 8, floor 6)
+ *
+ * The normal-vision floor is never cleared and the CVD floor is never
+ * approached. Searching hue triples does not rescue it: the best available,
+ * abandoning the semantic hues for blue/olive/magenta, reaches CVD 8.4 and
+ * normal 13.7 — and only at the very top step. So the hues below are the
+ * SEMANTIC ones rather than the marginally-better ones, because neither
+ * passes and the semantic pair is at least honest about what it means.
+ *
+ * The cause is structural: an overprint is muted by the paper it sits on,
+ * so three screens at a shared coverage produce three tones far closer
+ * together than the three inks are. F's premise — read the mix off the
+ * colour — is refuted by its own plates.
+ */
+export const F = {
+  id: "f", name: "Sector Plates",
+  paper: "#F5F3EE", paperDark: "#17171A",
+  inks: B.inks, other: "#6B6B66", inksDark: B.inksDark,
+  plates: { corporate: "#0B2D8B", trade: "#642100", labor: "#004528", other: "#383730" },
+  platesDark: { corporate: "#9DBDFF", trade: "#FFA784", labor: "#61D89A", other: "#BEBCB3" },
+  table: [0.35, 0.4729, 0.5854, 0.6939, 0.7903, 0.88],
+  tableDark: [0.2875, 0.4126, 0.5378, 0.6603, 0.7749, 0.88],
+  plateOrder: ["corporate", "trade", "labor", "other"],
+  gray: ["other"],
+  legible: [],
+};
+
+export const SYSTEMS = { a: A, b: B, c: C, d: D, e: E, f: F };
 /*  Shared encoders                                                    */
 /* ------------------------------------------------------------------ */
 
@@ -173,10 +297,29 @@ export const BREAKS_CENTS = [
   29_468_300, 46_565_200, 77_550_300, 127_558_000, 195_965_900,
 ];
 
-export function densityStep(cents, ramp) {
+export function densityStep(cents, ramp, breaks = BREAKS_CENTS) {
   let i = 0;
-  while (i < BREAKS_CENTS.length && cents > BREAKS_CENTS[i]) i++;
+  while (i < breaks.length && cents > breaks[i]) i++;
   return ramp[Math.min(i, ramp.length - 1)];
+}
+
+/**
+ * Which of the six steps a district falls in, as 0..1.
+ *
+ * `breaks` is a PARAMETER because round 2 runs on 2026 and the two cycles do
+ * not share a distribution: 2024's median district took $775,503 and 2026's
+ * has taken $608,524 so far. Measured, running 2026 through 2024's breaks
+ * bins the 441 districts [74, 81, 128, 102, 41, 15] — the top two steps hold
+ * 56 districts between them and the ramp stops encoding at exactly the end
+ * that matters. `meta.breaks_cents` carries each cycle's own quantiles.
+ *
+ * The consequence, stated rather than hidden: the two cycles' colours are
+ * NOT comparable to each other. Each map is a ranking within its own cycle.
+ */
+export function densityT(cents, breaks = BREAKS_CENTS) {
+  let i = 0;
+  while (i < breaks.length && cents > breaks[i]) i++;
+  return i / breaks.length;
 }
 
 /**
@@ -193,13 +336,187 @@ export function densityStep(cents, ramp) {
  * 0.88 keeps structure visible at the top of the range. It is also truer to
  * the medium: a riso solid is rarely a true 100% lay-down.
  */
-const COVERAGE_FLOOR = 0.20, COVERAGE_CEIL = 0.88;
+export const COVERAGE_FLOOR = 0.20, COVERAGE_CEIL = 0.88;
 
-export function coverage(cents) {
-  let i = 0;
-  while (i < BREAKS_CENTS.length && cents > BREAKS_CENTS[i]) i++;
-  const t = i / BREAKS_CENTS.length;              // 0 .. 1 across the six steps
+export function coverage(cents, breaks = BREAKS_CENTS) {
+  const t = densityT(cents, breaks);               // 0 .. 1 across the six steps
   return COVERAGE_FLOOR + t * (COVERAGE_CEIL - COVERAGE_FLOOR);
+}
+
+/**
+ * The per-plate ceiling for an N-plate page.
+ *
+ * COMPARISON.md records the 0.88 cap as "load-bearing, not taste": at full
+ * coverage the dots close up, the cell disappears, and the certainty
+ * encoding (screen frequency) silently stops working on exactly the
+ * districts with the most money.
+ *
+ * Round 2 found that the cap was being applied to the WRONG QUANTITY, and
+ * round 1 shipped with it defeated. `coverage()` caps the aggregate at 0.88,
+ * but each prototype then splits that aggregate with a multiplier — B uses
+ * `clamp(cov * 2)` — which pushes the FIRST PLATE to a coverage of exactly
+ * 1.000 for the top three steps of six. Measured on B's own numbers:
+ *
+ *     step 0  cov 0.400 0.000   paper left 60.00%
+ *     step 3  cov 1.000 0.216   paper left  0.00%
+ *     step 5  cov 1.000 0.760   paper left  0.00%
+ *
+ * Half of B's range prints with no paper showing at all. It reads acceptably
+ * only because the SECOND plate's dots sit on top of the solid first one, so
+ * a screen is still visible — by luck, not by the cap.
+ *
+ * At three plates that luck runs out: three 0.88 screens at three angles
+ * leave 0.17% of the cell as paper and the darkest districts print as flat
+ * solids, which is correction #5 recurring exactly as written.
+ *
+ * So the cap moves to where it can actually hold — the COMPOSITE. Each plate
+ * tops out at the coverage for which N overprinted screens leave the same
+ * 12% of the cell as paper that a single 0.88 plate leaves:
+ *
+ *     (1 - c)^N = 1 - 0.88   →   c = 1 - 0.12^(1/N)
+ *
+ *     N = 2 → 0.654    N = 3 → 0.507    N = 4 → 0.412
+ *
+ * The darkest tone stays dark because the depth comes from the INK
+ * overprinting subtractively, not from the dots closing up. Round 1's B is
+ * deliberately left alone: it is the artifact the user already judged, and
+ * re-inking it now would change the thing that was compared.
+ */
+export const PAPER_AT_MAX = 1 - COVERAGE_CEIL;          // 0.12
+export const plateCeil = (n) => 1 - Math.pow(PAPER_AT_MAX, 1 / n);
+
+/**
+ * THE SPLIT, for every round-2 prototype.
+ *
+ * One function, because the sequential build and the proportional mix turned
+ * out to be the same operation with different weights, and unifying them is
+ * what finally made "TOTAL INK IS THE MONEY" true rather than nearly true.
+ *
+ * Ink does not add, it MULTIPLIES what the paper returns: N screens at
+ * coverages c_i leave Π(1-c_i) of the cell showing. So give each plate
+ *
+ *     c_i = 1 - (1 - C)^(s_i)      s_i = w_i / Σw,  Σ s_i = 1
+ *
+ * and the composite leaves exactly (1-C) whatever the weights are. C is the
+ * money and nothing else; the weights are the mix and change no total.
+ *
+ * `C` comes from the system's own step TABLE rather than from a linear
+ * interpolation, because the steps are spaced to be equal in perceived
+ * lightness — see the table comments.
+ */
+export function splitInk(C, weights) {
+  const sum = weights.reduce((a, b) => a + Math.max(0, b), 0);
+  if (sum <= 0) return weights.map(() => 0);
+  const paper = 1 - C;
+  return weights.map((w) => 1 - Math.pow(paper, Math.max(0, w) / sum));
+}
+
+/** Composite coverage for a money position, off the system's step table. */
+export const coverageAt = (t, table) =>
+  table[Math.max(0, Math.min(table.length - 1, Math.round(t * (table.length - 1))))];
+
+/**
+ * The weights for a SEQUENTIAL build — D.
+ *
+ * Plate 1 inks up across the bottom of the range, plate 2 lays on top across
+ * the middle, plate 3 across the top, so the deep tones are an OVERPRINT of
+ * all three and not a picked swatch. Cumulative, never a sliding window: a
+ * window would take plate 1 back off at the top and the depth would go with
+ * it.
+ *
+ * At the bottom only plate 1 has weight, so its coverage is exactly C — the
+ * floor is a COMPOSITE floor like the ceiling, which is the whole of
+ * correction #9. The old code applied the floor to a plate and the cap to
+ * the composite, and a district at the bottom of the range printed 11.5% of
+ * a cell where it was supposed to print 20%.
+ */
+export function seqWeights(t, n = 3) {
+  const w = [];
+  for (let i = 0; i < n; i++) w.push(Math.max(0, Math.min(1, t * n - i)));
+  if (w.reduce((a, b) => a + b, 0) <= 0) w[0] = 1e-6;
+  return w;
+}
+
+export function sequentialPlates(t, n = 3, table) {
+  return splitInk(table ? coverageAt(t, table)
+                        : COVERAGE_FLOOR + t * (COVERAGE_CEIL - COVERAGE_FLOOR),
+                  seqWeights(t, n));
+}
+
+export function proportionalPlates(t, parts, table) {
+  return splitInk(table ? coverageAt(t, table)
+                        : COVERAGE_FLOOR + t * (COVERAGE_CEIL - COVERAGE_FLOOR),
+                  parts);
+}
+
+/* ------------------------------------------------------------------ */
+/*  The tone the plates actually print                                 */
+/* ------------------------------------------------------------------ */
+
+const hex2rgb01 = (h) => [1, 3, 5].map((i) => parseInt(h.substr(i, 2), 16) / 255);
+const rgb2hex01 = (c) => "#" + c.map((v) =>
+  Math.round(Math.min(1, Math.max(0, v)) * 255).toString(16).padStart(2, "0")).join("");
+const ks1 = (r) => { r = Math.min(0.996, Math.max(0.004, r)); return (1 - r) * (1 - r) / (2 * r); };
+const unks1 = (k) => 1 + k - Math.sqrt(k * k + 2 * k);
+
+/**
+ * The ONE colour a cell of halftone averages to — the same Kubelka-Munk (or,
+ * on a dark ground, additive) model the shader runs, in JS.
+ *
+ * This exists because round 1 validated a ramp that was TYPED, not printed.
+ * Prototype B's declared step 2 is #5d8069; its plates actually print
+ * #248456 there, and in dark mode the declared top step #c8fed9 prints
+ * #50b8c7. The legend was a picture of a different map. Every round-2 ramp
+ * is derived through this function instead, so the swatch cannot drift from
+ * the plate — and when it is checked, the map is what got checked.
+ *
+ * The average is over the 2^N combinations of which plates' dots are
+ * present, weighted by coverage: the screens sit at different angles so
+ * overlap is effectively independent, and the eye sums LIGHT, so the honest
+ * average is of REFLECTANCE and not of the inks.
+ */
+export function plateTone(paperHex, inkHexes, covs, dark = false) {
+  const paper = hex2rgb01(paperHex);
+  const inks = inkHexes.map(hex2rgb01);
+  const n = inks.length;
+  const out = [0, 0, 0];
+  for (let m = 0; m < (1 << n); m++) {
+    let w = 1;
+    for (let i = 0; i < n; i++) w *= ((m >> i) & 1) ? covs[i] : 1 - covs[i];
+    if (w <= 1e-9) continue;
+    let col;
+    if (dark) {
+      col = paper.slice();
+      for (let i = 0; i < n; i++) if ((m >> i) & 1)
+        for (let ch = 0; ch < 3; ch++) col[ch] += inks[i][ch] * 0.95;
+    } else {
+      const k = paper.map(ks1);
+      for (let i = 0; i < n; i++) if ((m >> i) & 1) {
+        const ki = inks[i].map(ks1);
+        for (let ch = 0; ch < 3; ch++) k[ch] += ki[ch] * 1.35;
+      }
+      col = k.map(unks1);
+    }
+    for (let ch = 0; ch < 3; ch++) out[ch] += w * Math.min(1, Math.max(0, col[ch]));
+  }
+  return rgb2hex01(out);
+}
+
+/** The six swatches a legend draws — DERIVED from the plates, never typed. */
+export function derivedRamp(sys, dark = false, weightsAt = null) {
+  const table = dark ? sys.tableDark : sys.table;
+  const plates = dark ? sys.platesDark : sys.plates;
+  const inks = sys.plateOrder.map((k) => plates[k]);
+  const paper = dark ? sys.paperDark : sys.paper;
+  const n = inks.length;
+  const w = weightsAt ?? sys.rampWeights
+    ?? (sys.split ? (t) => sys.split(t, n) : () => inks.map(() => 1));
+  return table.map((C, i) => plateTone(paper, inks, splitInk(C, w(i / (table.length - 1))), dark));
+}
+
+for (const sys of [D, E, F]) {
+  sys.ramp = derivedRamp(sys, false);
+  sys.rampDark = derivedRamp(sys, true);
 }
 
 export const usd = (cents, opts = {}) =>

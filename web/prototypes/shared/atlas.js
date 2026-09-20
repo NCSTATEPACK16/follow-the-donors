@@ -13,20 +13,51 @@
  * AESTHETIC first, cheaply, is what a prototype is for. What each renderer
  * costs to port is recorded in COMPARISON.md.
  */
-import { SECTOR_ORDER, OTHER_LABEL, STATUS_LABEL, usd, usdCompact } from "./inks.js";
+import { SECTOR_ORDER, OTHER_LABEL, STATUS_LABEL, BREAKS_CENTS, usd, usdCompact } from "./inks.js";
 
 const DATA = "./data";
 
-export async function loadAtlas() {
-  const [districts, sectors, meta] = await Promise.all([
-    fetch(`${DATA}/districts-2024.geojson`).then((r) => r.json()),
-    fetch(`${DATA}/sectors-2024.json`).then((r) => r.json()),
-    fetch(`${DATA}/meta-2024.json`).then((r) => r.json()),
+/**
+ * Round 1 loaded 2024 and only 2024. Round 2 is a 2026 build, so the cycle is
+ * a parameter — but it defaults to 2024 so prototypes A, B and C keep loading
+ * the data they were judged on. A prototype whose data changed under it is no
+ * longer the thing that was compared.
+ *
+ * `states` and `senate` are round-2 artifacts and are fetched only when asked
+ * for: A/B/C have no Senate layer and should not pay for one.
+ */
+export async function loadAtlas(cycle = "2024", opts = {}) {
+  const want = { senate: false, ...opts };
+  const [districts, sectors, meta, states, senate] = await Promise.all([
+    fetch(`${DATA}/districts-${cycle}.geojson`).then((r) => r.json()),
+    fetch(`${DATA}/sectors-${cycle}.json`).then((r) => r.json()),
+    fetch(`${DATA}/meta-${cycle}.json`).then((r) => r.json()),
+    want.senate ? fetch(`${DATA}/states-${cycle}.geojson`).then((r) => r.json()) : null,
+    want.senate ? fetch(`${DATA}/senate-${cycle}.json`).then((r) => r.json()) : null,
   ]);
   districts.features.sort((a, b) =>
     a.properties.geoid < b.properties.geoid ? -1 : 1);
   districts.features.forEach((f, i) => { f.index = i; });
-  return { districts, sectors, meta };
+  if (states) {
+    states.features.sort((a, b) =>
+      a.properties.state < b.properties.state ? -1 : 1);
+    states.features.forEach((f, i) => { f.index = i; });
+    // The Senate money hangs off the state feature so the renderers can treat
+    // a state exactly like a district: one feature, one set of numbers.
+    for (const f of states.features) {
+      const s = senate.states[f.properties.state];
+      Object.assign(f.properties, s
+        ? { ...s, has_senate: true }
+        : {
+            // DC and the five territory delegations elect no senators. That
+            // is not missing data and must not print as $0 alongside states
+            // that genuinely received nothing — it is a different fact.
+            has_senate: false, total_cents: 0, up_cents: 0, banked_cents: 0,
+            rep_cents: 0, dem_cents: 0, oth_cents: 0, seat_up: false,
+          });
+    }
+  }
+  return { cycle, districts, sectors, meta, states, senate };
 }
 
 /** Albers USA, fitted. AK and HI are inset by d3 — without that they drag the
@@ -69,12 +100,11 @@ export function partitionProjectable(districts) {
 
 /** Delegations Albers USA cannot place, rendered as labelled chips so the
  *  money is visible even though the geography is not. */
-export function renderOffmap(el, offmap, sys, dark, onPick) {
+export function renderOffmap(el, offmap, sys, dark, onPick, breaks = BREAKS_CENTS) {
   if (!offmap.length) { el.innerHTML = ""; return; }
   const ramp = dark ? sys.rampDark : sys.ramp;
   const step = (c) => {
-    const B = [29468300, 46565200, 77550300, 127558000, 195965900];
-    let i = 0; while (i < B.length && c > B[i]) i++;
+    let i = 0; while (i < breaks.length && c > breaks[i]) i++;
     return ramp[Math.min(i, ramp.length - 1)];
   };
   el.innerHTML = `
@@ -301,11 +331,12 @@ export function renderSheet(el, shape, sectors, sys, dark) {
 
 /** The table view. Non-negotiable: identity must never be colour-alone, and
  *  a choropleth read by a screen reader is a list of numbers or it is nothing. */
-export function renderTable(el, shapes) {
+export function renderTable(el, shapes, opts = {}) {
   const rows = [...shapes].sort((a, b) => b.props.pac_cents - a.props.pac_cents);
+  const cycle = opts.cycle || "2024";
   el.innerHTML = `
     <table>
-      <caption>All 441 districts, 2024 cycle, by PAC contributions received.</caption>
+      <caption>All ${rows.length} districts, ${cycle} cycle, by PAC contributions received.</caption>
       <thead><tr>
         <th scope="col">District</th>
         <th scope="col" class="num">PAC money</th>
@@ -326,10 +357,14 @@ export function renderTable(el, shapes) {
 /** Legend. Always present — the rule is a legend for >=2 series, no exceptions. */
 export function renderLegend(el, sys, dark, opts = {}) {
   const ramp = dark ? sys.rampDark : sys.ramp;
-  const labels = ["< $295K", "$295–466K", "$466–776K", "$776K–1.28M",
-                  "$1.28–1.96M", "> $1.96M"];
+  // Labels come from the CYCLE's own measured quantiles (meta.break_labels),
+  // never from a constant. The two cycles' breaks are different numbers, so a
+  // hardcoded label set would mis-state one of them — see export_data.py.
+  const labels = opts.labels || ["< $295K", "$295–466K", "$466–776K",
+                                 "$776K–1.28M", "$1.28–1.96M", "> $1.96M"];
+  const cycle = opts.cycle || "2024";
   el.innerHTML = `
-    <div class="legend-title">PAC money received, 2024 cycle</div>
+    <div class="legend-title">PAC money received, ${cycle} cycle</div>
     <div class="legend-ramp">${ramp.map((c, i) => `
       <div class="legend-step">
         <span class="legend-chip" style="--ink:${c}" data-cov="${(i + 1) / 6}"></span>
@@ -357,7 +392,7 @@ export function shellHTML({ title, kicker, thesis, meta }) {
     <div class="mast-right">
       <div class="stat">
         <div class="stat-num">${usdCompact(Math.round(meta.district_dollars * 100))}</div>
-        <div class="stat-lab">of PAC money placed in a district, 2024 cycle</div>
+        <div class="stat-lab">of PAC money placed in a district, ${meta.cycle} cycle</div>
       </div>
       <div class="stat stat-warn">
         <div class="stat-num">${(meta.superseded_share * 100).toFixed(2)}%</div>

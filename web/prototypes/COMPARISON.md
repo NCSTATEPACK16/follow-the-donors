@@ -1,9 +1,23 @@
-# Three riso prototypes — what each one argues, and what building them turned up
+# Six riso prototypes — what each one argues, and what building them turned up
 
-Written 2026-09-19. Live at `web/prototypes/index.html` (serve the directory;
-`python3 -m http.server` is enough). All three render the **same** data: 441
-congressional districts, $420,315,216 of PAC money placed in a district in the
-2024 cycle, real `map_status` from stage 05. Nothing is mocked.
+Live at `web/prototypes/index.html` (serve the directory; `python3 -m
+http.server` is enough). Two rounds: **round 1 — A, B, C** asks what riso is
+*for*, and is below; **round 2 — D, E, F** asks what the colour should *mean*,
+and is at the end of this file. Nothing is mocked in either.
+
+---
+
+# Round 1 — A, B, C · what riso is for
+
+Written 2026-09-19. All three render the **same** data: 441 congressional
+districts, $420,315,216 of PAC money placed in a district in the 2024 cycle,
+real `map_status` from stage 05.
+
+> **Read §8 of round 2 before trusting the ramp values in this half.** Every
+> ramp here was validated as a *swatch*; the map is drawn by overprinting the
+> *plates*, and the two are not the same colour. B's printed ramp fails the
+> checks its declared ramp passes. The prototypes are left exactly as the user
+> judged them; the claim about them is corrected.
 
 ---
 
@@ -219,3 +233,162 @@ The prototypes resolve the **aesthetic and the encoding**. They do not resolve
 the MapLibre port, which is task 5 of the v1 plan and carries its own risk —
 deliberately, because resolving the look first and cheaply is what a prototype
 is for. A and C port without a custom WebGL layer; B does not.
+
+---
+
+# Round 2 — D, E, F · what the colour should mean
+
+Written 2026-09-19, same day as round 1. Round 1 settled **what riso is for**
+and B won. Round 2 keeps B's press and asks the next question — **what the
+colour should mean** — over the **2026** cycle: $328,788,436 of PAC money in
+441 districts, $80,871,118 to Senate candidates. It also adds the three things
+B could not do: a state blow-up, a Senate layer, and motion.
+
+| | D — Three-Plate | E — Tilt | F — Sector Plates |
+|---|---|---|---|
+| Colour means | the money, nothing else | the recipient's party tilt | the donor mix |
+| Plates | 3, sequential build | 3 — REP / neutral / DEM | 4 — Corporate / Trade / Labor / other |
+| Money axis | **passes** light + dark | **passes at every tilt**, light + dark | **passes at every mix**, light + dark |
+| Second channel readable | n/a | **147 of 441 districts** | **nowhere** |
+| Greyscale | yes | partly | no |
+
+## What building them turned up
+
+Numbering continues round 1's. Every figure below is measured, and the scripts
+that measured them are the ones in `shared/inks.js`.
+
+### 8. The ramp was TYPED, not printed — so the legend showed a different map
+
+Round 1 validated each prototype's `ramp` array and recorded the check it
+passed. But the map is not drawn from `ramp`: the shader overprints the
+`plates` and the reader sees the composite. Nobody had ever compared the two.
+
+Prototype B, its own numbers:
+
+```
+declared   #95b59f #779b82 #5d8069 #486552 #374a3d #27302a
+printed    #9cc4ae #60a482 #248456 #166f4c #145d4a #114a49
+dark declared  #32503c #31764d #2f9d61 #3fc47b #67e89c #c8fed9
+dark printed   #224134 #295d45 #307a57 #3a9079 #45a4a0 #50b8c7
+```
+
+Re-validated against what it prints, B's light ramp **fails**: pale end
+1.73:1 against its paper (floor 2:1) and two adjacent steps under the ΔL gate.
+Its dark ramp fails too, at 1.60:1. The round-1 result "ordinal PASS · pale
+end #95b59f at 2.02:1" is true of a swatch nobody can see.
+
+The fix is structural rather than a re-type: `plateTone()` is a JS port of the
+shader's own Kubelka-Munk (and additive-dark) composite, and every round-2
+`ramp` is **derived from the plates at load**. A legend that disagrees with the
+map is no longer expressible. Round 1's B is deliberately left as it is — it is
+the artifact the user already judged — but it is no longer described as
+validated.
+
+### 9. The coverage cap was moved to the composite; the floor was left on a plate
+
+Round 1's correction #5 capped coverage at 0.88 so the halftone cell never
+closes. Round 2 moved that cap to the composite, where it can actually hold
+across N plates. **The floor at the other end of the range was not moved with
+it.** So the bottom step put 0.115 of a cell of ink down where the design said
+0.20 — the palest districts printed at 57% of their intended weight.
+
+Both ends now live on the composite, and the sequential build and the
+proportional mix became one function (`splitInk`) with different weights.
+"Total ink is the money" is now true by construction in all three prototypes
+rather than nearly true in two.
+
+### 10. Six steps and a visible pale end are in direct conflict — and it is arithmetic
+
+A halftone cell at coverage *c* over paper of luminance *L* averages at best
+`(1-c)·L`, whatever the ink: the paper showing through sets a ceiling on how
+dark a light screen can read. Against `#F5F3EE` that makes **2:1 unreachable
+below c ≈ 0.53 even with a pure black ink.** A 20% screen cannot clear the pale
+-end floor and no choice of ink will rescue it.
+
+Raising the floor buys the pale end and spends the step gaps: the whole ramp
+now lives in a shorter stretch of lightness, and six quantile classes at
+ΔL ≥ 0.06 need 0.30 of it. Measured, at a floor of 0.50 the light end passes
+and adjacent steps start colliding.
+
+What resolves it is **spacing the six steps equally in perceived lightness
+instead of equally in coverage** — the coverage for each step is ours to
+choose, and linear coverage wastes the gaps at exactly the pale end where they
+are scarcest. Each system therefore carries a measured `table` of six
+coverages, and that table (not a formula) is the money encoding.
+
+### 11. Iso-lightness has to be measured on the printed tone, not on the ink
+
+E and F both claim lightness is the money and hue is the second variable. That
+claim is only true if the plates are equal in lightness — otherwise a
+district's tone moves when its *mix* moves, and the money axis is not an axis.
+
+Setting the inks to a common OKLab L does not do it. Kubelka-Munk mixes per
+channel, so a saturated red and a neutral gray at the same L print at
+different lightnesses once the paper is in the loop, and the per-mix ramps
+diverged by enough to fail the ΔL gate. Each ink is now solved for **the
+lightness its own full coverage prints at**, which makes every mix's money
+ramp agree.
+
+### 12. A bivariate riso map dims its second variable exactly where the first is smallest
+
+E's tilt hue, REP ↔ DEM, measured on the printed composite at each money step:
+
+| step | 0 | 1 | 2 | 3 | 4 | 5 |
+|---|---|---|---|---|---|---|
+| normal ΔE | 6.5 | 9.1 | 11.9 | 14.6 | **17.7** | **20.9** |
+| CVD ΔE | 5.4 | 7.5 | 9.8 | 11.9 | **14.4** | **17.1** |
+
+It clears the 15 / 8 floors at the top two steps only: **147 of 441 districts
+(33.3%), holding $197.4M of $328.8M (60.0%)**. On the other 294 the hue is
+present and is not readable.
+
+This is not a palette that can be fixed. Lightness encodes money by putting
+*less ink* on a poorer district, and less ink is less hue. The chroma in E is
+the **highest** that still passes the money axis — the reverse of round 1's
+correction #3, and deliberately: there chroma was decoration, here it is the
+data.
+
+### 13. F's premise is refuted by its own plates
+
+Corporate ↔ Trade ↔ Labor, same measurement:
+
+| step | 0 | 1 | 2 | 3 | 4 | 5 |
+|---|---|---|---|---|---|---|
+| normal ΔE | 4.7 | 6.6 | 8.2 | 10.0 | 11.5 | 13.0 |
+| CVD ΔE | 1.7 | 2.4 | 3.0 | 3.7 | 4.2 | 4.6 |
+
+The normal-vision floor (15, a hard gate that secondary encoding does not
+excuse) is never cleared, and the CVD floor is never approached. A search over
+hue triples does not rescue it: the best available — abandoning the semantic
+blue/orange/green for blue/olive/magenta — reaches CVD 8.4 and normal 13.7,
+and only at the very top step. So F keeps the semantic hues, because neither
+set passes and the semantic one is at least honest about what it means.
+
+The cause is the medium: an overprint is muted by the paper under it, so three
+screens at a shared coverage land far closer together than the three inks are.
+**F is a beautiful object that cannot be read.** That is a result, not a bug,
+and it is what a prototype round is for.
+
+### 14. The harness reported an exercised control that was never exercised
+
+`check.mjs` clicked every `.ctl` and reported "5 control(s) exercised". The
+state picker is one of the five — and it is a `<select>`. Clicking a `<select>`
+in headless Chromium opens no menu and fires no `change`, so **the state
+blow-up, the headline feature of round 2, was never once entered** while the
+harness passed. `selectOption` fires the event; `click` does not.
+
+Same shape as the GL-flags trap already written at the top of that file: a
+check that runs, reports a pass, and tests nothing. `checkStateView` now enters
+three states — TX (38 districts, all superseded), MD (the DC→MD Senate
+correction, money banked), PR (a territory, undrawable on Albers USA and
+therefore only ever a map here) — and asserts the district count, the money,
+the Senate figure, the re-screen **on the GPU uniform rather than on its own
+label**, that the press one-shot runs, that reduced motion moves nothing at the
+moment of entry, and that going back restores 436 districts plus five chips.
+
+## What round 2 does not decide
+
+Whether a map may encode a second variable it can only show on a third of its
+districts, and whether F's unreadability disqualifies it or is simply the price
+of the most riso-true answer. Both are the user's call, which is why the
+numbers are here rather than a recommendation.

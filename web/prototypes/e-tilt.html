@@ -1,0 +1,856 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tilt — riso prototype E</title>
+<link rel="stylesheet" href="./fonts.css">
+<link rel="stylesheet" href="./shared/base.css">
+<style>
+/* ==================================================================
+   E — TILT
+   Bivariate on the same three drums D uses. Lightness is money, hue is
+   the party tilt of the recipient.
+
+   Diverging, so the midpoint is a NEUTRAL GREY DRUM and never a third
+   hue: a district that splits its money evenly must not read as a
+   colour of its own, because "even" is the absence of tilt and not a
+   category beside R and D.
+
+   The split is proportional, not sequential — that is the ONE thing
+   that differs from D. `proportionalPlates` keeps the composite paper
+   left in the cell equal to the money whatever the mix, so a district
+   that is entirely one-sided still runs the full 0.20 → 0.88 range on
+   its own plate instead of saturating at step 1 of 6.
+   ================================================================== */
+:root { --paper: #F5F3EE; }
+[data-theme="dark"] { --paper: #17171A; }
+
+.stage-inner { position: relative; background: var(--paper); }
+.stage-inner canvas { display: block; width: 100%; height: auto; }
+#lines { position: absolute; inset: 0; }
+
+/* Only the paper tooth — the halftone IS the texture, and mottle on top of
+   a dot screen reads as dirt rather than as print. */
+.stage-inner::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background-image: url("./texture/grain-128.png"); background-size: 128px;
+  mix-blend-mode: multiply; opacity: .30;
+}
+[data-theme="dark"] .stage-inner::after { mix-blend-mode: screen; opacity: .16; }
+
+.legend-chip { border: none; background: none !important; }
+.legend-chip canvas { width: 30px; height: 13px; display: block; }
+.lv-mark { border: 1px solid var(--rule); }
+.lv-current   { background: repeating-linear-gradient(90deg, var(--ink) 0 1px, transparent 1px 2px); }
+.lv-contested { background: repeating-linear-gradient(90deg, var(--ink) 0 2px, transparent 2px 5px); }
+.lv-stale     { background: repeating-linear-gradient(90deg, var(--ink) 0 3px, transparent 3px 9px); }
+.masthead h1 { font-size: clamp(42px, 8vw, 88px); }
+.nogl { padding: 30px; border: 2px solid var(--stale); color: var(--stale); font-size: 13px; }
+
+/* ---- the diverging legend ----------------------------------------
+   Two channels means two axes, so the key is a grid and not a strip:
+   the money ramp printed at three tilt positions. Each cell is a REAL
+   halftone from the same coverage split the map uses, which is also
+   what makes the one-sided saturation bug visible if it ever returns —
+   the outer columns have to darken across all six rows. */
+.tl { display: flex; flex-direction: column; gap: 3px; }
+.tl-head, .tl-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) 30px 30px 30px;
+  gap: 6px; align-items: center;
+}
+.tl-head span {
+  font: 600 9px/1 var(--sans); letter-spacing: .06em; text-transform: uppercase;
+  color: var(--ink-3); text-align: center;
+}
+.tl-head span:first-child { text-align: left; }
+
+/* ---- the party block in the sheet -------------------------------- */
+.tilt-read {
+  margin-top: 9px; font-size: 11.5px; line-height: 1.4; color: var(--ink-2);
+}
+.tilt-read b { font-family: var(--mono); font-weight: 400; color: var(--ink); }
+
+/* ---- the colophon histogram --------------------------------------
+   Drawn as bars rather than as a preformatted block: a <pre> of this
+   width side-scrolls the whole page at 390px, which is the one thing
+   the harness will not forgive. */
+.hist { display: flex; flex-direction: column; gap: 2px; max-width: 560px; margin: 12px 0 14px; }
+.hist-row {
+  display: grid; grid-template-columns: 9ch minmax(0, 1fr) 4ch;
+  gap: 8px; align-items: center;
+  font: 400 11px/1.3 var(--mono); font-variant-numeric: tabular-nums;
+  color: var(--ink-3);
+}
+.hist-track { height: 10px; background: color-mix(in oklab, var(--ink) 8%, transparent); }
+.hist-track i { display: block; height: 100%; background: var(--ink-2); }
+.hist-n { text-align: right; color: var(--ink-2); }
+.hist-cap { font-size: 11px; color: var(--ink-3); margin: 0 0 4px; }
+</style>
+</head>
+<body>
+<a class="skip" href="#stage">Skip to the map</a>
+<div id="shell"></div>
+<div class="band" id="band" role="note"></div>
+<div class="controls">
+  <button class="ctl" id="theme" aria-pressed="false">Dark stock</button>
+  <button class="ctl" id="layer" aria-pressed="false">Senate layer</button>
+  <button class="ctl" id="tabletoggle" aria-pressed="false">Table view</button>
+  <button class="ctl" id="motion" aria-pressed="true">Press breathing</button>
+  <span id="picker"></span>
+  <span class="stage-note" id="perf"></span>
+</div>
+<div class="statebar" id="statebar" hidden></div>
+<div class="wrap">
+  <div class="stage" id="stage">
+    <div class="stage-inner" id="inner">
+      <canvas id="gl" role="img" aria-label=""></canvas>
+      <canvas id="lines" aria-hidden="true"></canvas>
+    </div>
+    <div class="stage-note"><span id="countline"></span></div>
+    <div class="offmap" id="offmap"></div>
+  </div>
+  <aside class="rail">
+    <div id="legend"></div>
+    <div class="sheet" id="sheet" aria-live="polite"></div>
+  </aside>
+</div>
+<div class="tablewrap" id="table" hidden></div>
+<div class="colophon">
+  <h2>Prototype E — Tilt</h2>
+  <p><strong>Thesis:</strong> two channels on D's three drums. Lightness is
+  money — the composite paper left in the halftone cell is exactly the money,
+  whatever the mix — and hue is the party tilt of the recipient. Red drum,
+  neutral grey drum, blue drum, and a district's ink is split between them in
+  proportion to where its money actually went. A diverging scale needs a
+  neutral midpoint rather than a third hue, so the middle drum is grey: "even"
+  is the absence of tilt, not a category standing beside R and D.</p>
+
+  <p><strong>The argument for E does not survive being measured.</strong>
+  Round 2 justified this prototype by noting that 2026 House money is
+  near-even nationally — <span id="co-nat">—</span> — and concluding that
+  district-level variation would therefore be real rather than a one-sided
+  wash. At district level it is a wash on <em>both sides at once</em>. The
+  tilt histogram over the <span id="co-n">—</span> districts that have any
+  major-party money at all:</p>
+
+  <p class="hist-cap" id="co-histcap">Districts by party tilt of the money they received, 2026 cycle.</p>
+  <div class="hist" id="co-hist"></div>
+
+  <p><span id="co-extreme">—</span> sit in the two extreme bins, and
+  <span id="co-near">—</span> are within 20 points of even. The near-even
+  national total is two one-sided halves cancelling out. E therefore renders
+  as a near-binary two-colour map with an almost empty middle, and the neutral
+  drum the whole encoding is built around is inked by almost nothing.</p>
+
+  <p>That is a finding rather than a fault. PAC money tracks the incumbent's
+  party almost exactly, and E is the prototype that shows it — the map is a
+  party map with a money channel laid over it. <strong>The neutral drum
+  stays.</strong> Dropping it because it is rarely inked would make the few
+  genuinely even districts print as a hue, which is the one thing a diverging
+  scale may not do, and it would delete the very thing the finding is measured
+  against. Nothing here was re-scaled to manufacture a gradient the data does
+  not contain.</p>
+
+  <p><strong>No major-party money is not an even split.</strong> Both land on
+  the neutral drum, because there is nowhere else for them to land. They are
+  told apart in words — in the tooltip, in the sheet and in the table — and
+  never by colour alone. <span id="co-none">—</span></p>
+
+  <p><strong>Zoom:</strong> a blow-up is a NEW PLATE, re-screened coarser
+  (3.6px cells nationally, 8px in a state), not a camera move over the same
+  one. The certainty ratios scale with it, so a superseded district stays
+  2.33&times; coarser than a current one at either size.</p>
+</div>
+
+<script src="./vendor/d3-array.min.js"></script>
+<script src="./vendor/d3-geo.min.js"></script>
+<script src="./vendor/earcut.min.js"></script>
+<script type="module">
+import { E, densityT, proportionalPlates, usdCompact, usd,
+         SCREEN_ANGLES } from "./shared/inks.js";
+import { halftoneRect } from "./shared/screens.js";
+import { loadAtlas, makeProjection, projectAll, measure, makePicker,
+         partitionProjectable, renderOffmap, renderSheet, renderTable,
+         renderLegend, shellHTML, debounce } from "./shared/atlas.js";
+import { createPress, triangulatePlates } from "./shared/plate.js";
+import { CELL, FLAT_CELL, NATIONAL_SCALE, STATE_SCALE, makeStateProjection,
+         districtsOf, stateIndex, quantileBreaks, renderCycleBand,
+         renderSenateLegend, renderSenateTable, renderStateBar,
+         renderStatePicker, tiltOf } from "./shared/view.js";
+
+const SYS = E;
+const CYCLE = "2026";
+/* Three plates, three angles. GLOBAL — one angle per plate for the whole
+   sheet, never per district. Identical to D, deliberately: E and D are a
+   comparison of encodings and a different screen would corrupt it. The
+   neutral drum lands on the key angle, which is where the midpoint of a
+   diverging scale belongs anyway. */
+const ANGLES = [SCREEN_ANGLES.color, SCREEN_ANGLES.key, SCREEN_ANGLES.second];
+/* Slot order, fixed and named once: [rep, neutral, dem], matching E.plates.
+   Referenced by name so the lead's validated hexes are a one-line swap in
+   inks.js — no hex is ever written on this page. */
+const plateInks = (d) => {
+  const p = d ? SYS.platesDark : SYS.plates;
+  return [p.rep, p.neutral, p.dem];
+};
+
+let dark = false, shapes = [], picker = null, sel = -1, hov = -1;
+let W = 0, H = 0, atlas = null, offmap = [], press = null, mesh = null;
+let view = { mode: "national", st: null, layer: "house" };
+let breathing = true;
+
+const glc = document.getElementById("gl");
+const lines = document.getElementById("lines");
+const inner = document.getElementById("inner");
+
+const t0 = performance.now();
+atlas = await loadAtlas(CYCLE, { senate: true });
+window.__atlas = atlas;                       // the harness asserts against this
+const tLoad = performance.now() - t0;
+
+const BREAKS = atlas.meta.breaks_cents;
+const SEN_BREAKS = quantileBreaks(
+  atlas.states.features.filter((f) => f.properties.has_senate)
+    .map((f) => f.properties.total_cents));
+const SEN_LABELS = (() => {
+  const s = (c) => usdCompact(c);
+  return [`< ${s(SEN_BREAKS[0])}`,
+    ...SEN_BREAKS.slice(0, -1).map((b, i) => `${s(b)}–${s(SEN_BREAKS[i + 1])}`),
+    `> ${s(SEN_BREAKS.at(-1))}`];
+})();
+
+document.getElementById("shell").innerHTML = shellHTML({
+  kicker: `follow the donors · prototype E · ${CYCLE} cycle`,
+  title: "Tilt",
+  thesis: "Federal PAC money on three drums, split by who received it. How "
+        + "much ink is the money; which drums it lands on is the party tilt "
+        + "of the recipient; how coarse the screen is, is how sure we are the "
+        + "district is still shaped like that.",
+  meta: atlas.meta,
+});
+renderCycleBand(document.getElementById("band"), atlas.meta);
+renderStatePicker(document.getElementById("picker"), stateIndex(atlas),
+                  (st) => goTo({ mode: "state", st }));
+
+/**
+ * The money→coverage table for the stock currently on the press.
+ *
+ * Light and dark have DIFFERENT tables, not a scaled one: subtractive ink on
+ * paper and additive light on a dark ground reach their floors at different
+ * coverages, and each was solved against its own model. The mesh therefore
+ * has to be rebuilt when the stock changes, which is why the theme toggle
+ * runs layout() rather than only repainting.
+ */
+const stepTable = () => (dark ? SYS.tableDark : SYS.table);
+
+/* ------------------------------------------------------------------ */
+/*  Encoders — the ONLY thing that differs between D, E and F          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Tilt, as a coverage split across [rep, neutral, dem].
+ *
+ * `tiltOf` is +1 all-Republican, −1 all-Democratic, 0 even, and NULL when
+ * there is no major-party money at all — a different fact from even, and one
+ * that cannot be carried by colour because both have to print on the neutral
+ * drum. The tooltip, the sheet and the table say which it is in words.
+ *
+ * The clamp lives in tiltOf and is load-bearing: FEC rows go negative when a
+ * refund lands in a later filing period, and an unclamped ratio would index
+ * past the end of a ramp. Read its comment before touching it.
+ */
+function tiltParts(p) {
+  const tau = tiltOf(p);
+  return tau === null
+    ? [0, 1, 0]
+    : [Math.max(0, tau), 1 - Math.abs(tau), Math.max(0, -tau)];
+}
+
+/**
+ * E: split the money PROPORTIONALLY across the three plates, by tilt.
+ *
+ * Total ink is the money and the mix is the tilt. `proportionalPlates`
+ * composes in the space where overprinting is linear, so the composite paper
+ * left in the cell is exactly the money no matter how the mix is shaped —
+ * which is what keeps a one-sided district encoding across the whole money
+ * range instead of saturating one plate at step 1 of 6. That failure would
+ * have hit 384 of 440 districts here, so it is not an edge case on this page;
+ * do not reimplement the split.
+ */
+const encodeHouse = () => (p) => ({
+  cov: proportionalPlates(densityT(p.pac_cents, BREAKS), tiltParts(p), stepTable()),
+  cell: (CELL[p.map_status] ?? FLAT_CELL) * 1,
+});
+
+/**
+ * The Senate layer reuses the coarse screen for "banked", and that reuse is
+ * the point rather than a shortcut: one meaning across both layers —
+ * *this figure is not what it appears to be*. A superseded boundary and
+ * money held for an election that is not this one are different facts but
+ * the same warning, and one grammar to learn beats two.
+ *
+ * Tilt comes from the same tiltOf on the state's own rep_cents/dem_cents, so
+ * the hue means the same thing on both layers too.
+ *
+ * A state with no Senate representation gets NO PLATE AT ALL. Printing it as
+ * zero would put it alongside states that genuinely received nothing, and
+ * that is a different fact.
+ */
+const encodeSenate = () => (p) => ({
+  cov: p.has_senate
+    ? proportionalPlates(densityT(p.total_cents, SEN_BREAKS), tiltParts(p), stepTable())
+    : [0, 0, 0],
+  cell: p.seat_up ? CELL.cd119_current : CELL.cd119_superseded,
+});
+
+/* ------------------------------------------------------------------ */
+/*  Saying the tilt in words                                           */
+/* ------------------------------------------------------------------ */
+
+/** One line, never colour alone. Null and even are different sentences. */
+function tiltPhrase(p) {
+  const t = tiltOf(p);
+  if (t === null) return "No major-party money";
+  if (t === 0) return "Evenly split";
+  return `Tilt ${t > 0 ? "R" : "D"} ${(Math.abs(t) * 100).toFixed(0)}%`;
+}
+
+/** The same distinction, short enough for a table cell. */
+function tiltCell(p) {
+  const t = tiltOf(p);
+  if (t === null) return "no major-party money";
+  if (t === 0) return "evenly split";
+  return `${t > 0 ? "R" : "D"} +${(Math.abs(t) * 100).toFixed(0)}`;
+}
+
+/* ------------------------------------------------------------------ */
+
+function currentFeatures() {
+  if (view.mode === "state") return districtsOf(atlas, view.st);
+  if (view.layer === "senate") return atlas.states.features;
+  return atlas.districts.features;
+}
+
+function layout() {
+  const box = document.getElementById("stage").getBoundingClientRect();
+  W = Math.max(320, Math.round(box.width));
+  H = Math.round(W * 0.60);
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  press.resize(W, H, dpr);
+  lines.width = Math.round(W * dpr); lines.height = Math.round(H * dpr);
+  lines.style.width = `${W}px`; lines.style.height = `${H}px`;
+
+  const senate = view.mode === "national" && view.layer === "senate";
+  let feats, proj;
+
+  if (view.mode === "state") {
+    // A single state gets its OWN conic, not a fitted Albers USA — see
+    // makeStateProjection. This is also the only view in which the five
+    // territory delegations can be drawn at all.
+    feats = districtsOf(atlas, view.st);
+    proj = makeStateProjection(feats, W, H);
+    offmap = [];
+    press.setCellScale(STATE_SCALE);
+  } else {
+    const src = senate
+      ? { type: "FeatureCollection", features: atlas.states.features }
+      : atlas.districts;
+    const part = partitionProjectable(src);
+    feats = part.mapped.features;
+    offmap = senate ? [] : part.offmap;
+    proj = makeProjection(part.mapped, W, H);
+    press.setCellScale(NATIONAL_SCALE);
+  }
+
+  const encode = senate ? encodeSenate() : encodeHouse();
+  shapes = measure(projectAll({ type: "FeatureCollection", features: feats }, proj));
+  mesh = triangulatePlates(feats, proj, encode);
+  press.setMesh(mesh.data, mesh.count);
+  picker = makePicker(shapes, W, H, 1);
+  sel = -1; hov = -1;
+
+  glc.setAttribute("aria-label", senate
+    ? `Halftone map of PAC contributions to Senate candidates by state, ${
+        CYCLE} cycle. Ink weight is the money; hue is the party tilt of the recipient.`
+    : view.mode === "state"
+      ? `Halftone map of PAC contributions by congressional district in ${
+          view.st}, ${CYCLE} cycle. Ink weight is the money; hue is the party tilt of the recipient.`
+      : `Halftone map of PAC contributions by congressional district, ${
+          CYCLE} cycle. Ink weight is the money; hue is the party tilt of the recipient.`);
+
+  paint();
+  renderOffmap(document.getElementById("offmap"), offmap, SYS, dark, (geoid) => {
+    const f = offmap.find((x) => x.properties.geoid === geoid);
+    sheet({ props: f.properties });
+  }, BREAKS);
+
+  renderStateBar(document.getElementById("statebar"), {
+    state: view.mode === "state" ? view.st : null,
+    districts: view.mode === "state" ? districtsOf(atlas, view.st) : [],
+    senate: view.mode === "state"
+      ? atlas.states.features.find((f) => f.properties.state === view.st)?.properties
+      : null,
+    cycle: CYCLE,
+  });
+  const back = document.getElementById("backtonational");
+  if (back) back.addEventListener("click", () => goTo({ mode: "national" }));
+
+  document.getElementById("countline").textContent = senate
+    ? `WebGL2 halftone · three plates · ${shapes.length} states`
+    : `WebGL2 halftone · three plates · Kubelka-Munk overprint · ${
+        shapes.length} districts`;
+  // The layer toggle only means something nationally. In a state blow-up the
+  // plan is explicit: House districts stay as the fill and Senate money gets
+  // its own plate in the margin — both, not either.
+  const lay = document.getElementById("layer");
+  lay.disabled = view.mode === "state";
+  lay.title = view.mode === "state"
+    ? "In a state view both layers are shown — House as the fill, Senate in the rail"
+    : "";
+}
+
+function paint() {
+  press.setPaper(dark ? SYS.paperDark : SYS.paper);
+  press.setDark(dark);
+  press.setInks(plateInks(dark));
+  press.draw();
+  paintLegend();
+}
+
+function drawLines() {
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const ctx = lines.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  const trace = (s) => {
+    ctx.beginPath();
+    for (const r of s.rings) {
+      ctx.moveTo(r.xy[0], r.xy[1]);
+      for (let k = 2; k < r.xy.length; k += 2) ctx.lineTo(r.xy[k], r.xy[k + 1]);
+      ctx.closePath();
+    }
+  };
+  // Registration is PERFECT. The keyline is one weight everywhere and stays
+  // the heaviest mark on the sheet; all the uncertainty is in the screen.
+  ctx.lineWidth = view.mode === "state" ? 1.1 : 0.75;
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = dark ? "rgba(237,237,230,.50)" : "rgba(27,27,24,.62)";
+  for (const s of shapes) { trace(s); ctx.stroke(); }
+  if (hov >= 0 && hov !== sel) {
+    ctx.lineWidth = 1.8; ctx.strokeStyle = dark ? "#EDEDE6" : "#1b1b18";
+    trace(shapes[hov]); ctx.stroke();
+  }
+  if (sel >= 0) {
+    ctx.lineWidth = 2.4; ctx.strokeStyle = dark ? "#EDEDE6" : "#1b1b18";
+    trace(shapes[sel]); ctx.stroke();
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  The legend — two channels, so two axes                             */
+/* ------------------------------------------------------------------ */
+
+/* The three tilt positions the key is printed at. The middle one is the
+   neutral drum on its own; the outer two are a single party drum on its own,
+   which is also the proof that a one-sided district still spends the whole
+   money range rather than saturating early. */
+const KEY_COLS = [
+  { lab: "all D", parts: [0, 0, 1] },
+  { lab: "even",  parts: [0, 1, 0] },
+  { lab: "all R", parts: [1, 0, 0] },
+];
+
+function tiltGridHTML(labels) {
+  return `<div class="tl">
+    <div class="tl-head"><span>Money</span>${
+      KEY_COLS.map((c) => `<span>${c.lab}</span>`).join("")}</div>
+    ${labels.map((lab, i) => `<div class="tl-row">
+      <span class="legend-lab">${lab}</span>
+      ${KEY_COLS.map((c, k) => `<span class="legend-chip" data-step="${i}"
+        data-col="${k}"></span>`).join("")}
+    </div>`).join("")}
+  </div>`;
+}
+
+/** Real halftone swatches from the same coverage path the map uses. A flat
+ *  chip beside a dotted map is a lie about what the reader is looking at. */
+function paintTiltChips(root) {
+  root.querySelectorAll(".legend-chip[data-step]").forEach((chip) => {
+    const step = +chip.dataset.step, col = +chip.dataset.col;
+    const cv = document.createElement("canvas");
+    const w = 60, h = 26;
+    cv.width = w; cv.height = h;
+    const c = cv.getContext("2d");
+    c.fillStyle = dark ? SYS.paperDark : SYS.paper; c.fillRect(0, 0, w, h);
+    const cov = proportionalPlates(step / 5, KEY_COLS[col].parts);
+    const pl = plateInks(dark);
+    // Additive in dark mode, matching the shader. A legend that composites
+    // differently from the map is a legend for a different map.
+    c.globalCompositeOperation = dark ? "lighter" : "source-over";
+    for (let k = 0; k < 3; k++) {
+      halftoneRect(c, 0, 0, w, h, pl[k], ANGLES[k], cov[k], 8.4);
+    }
+    c.globalCompositeOperation = "source-over";
+    chip.innerHTML = ""; chip.appendChild(cv);
+  });
+}
+
+function paintLegend() {
+  const senate = view.mode === "national" && view.layer === "senate";
+  const el = document.getElementById("legend");
+  if (senate) {
+    renderSenateLegend(el, atlas.senate);
+    // Two series on this layer as well — money and tilt — so the key carries
+    // both. Inserted rather than rewritten: the Senate legend's own words
+    // about the coarse screen are the same on every round-2 page.
+    el.querySelector(".sen-stats").insertAdjacentHTML("afterend",
+      `<div class="legend-title legend-title-2">Senate money and party tilt</div>${
+        tiltGridHTML(SEN_LABELS)}
+       <p class="legend-foot">Ink weight is the money; hue is the party of the
+         candidates who received it. A state whose Senate money is evenly
+         split prints on the neutral drum — so does a state with no
+         major-party money at all, and the two are told apart in the table and
+         the tooltip, never by colour.</p>`);
+    paintTiltChips(el);
+    return;
+  }
+  renderLegend(el, SYS, dark, {
+    cycle: CYCLE,
+    labels: atlas.meta.break_labels,
+    staleLabel: "Superseded — printed coarse; a redraw is in effect and we cannot draw it",
+  });
+  // The shared legend renders a one-dimensional strip. E has two channels, so
+  // the strip is replaced by the money ramp printed at three tilt positions —
+  // and the vintage key below it stays exactly the shared one, because that
+  // half of the legend must not differ between D, E and F.
+  el.querySelector(".legend-title").textContent =
+    `PAC money and party tilt, ${CYCLE} cycle`;
+  el.querySelector(".legend-ramp").outerHTML = tiltGridHTML(atlas.meta.break_labels)
+    + `<p class="legend-foot">Lightness is the money, hue is the tilt of the
+        recipient, and the total ink is the money whatever the mix. The middle
+        column is nearly unused: ${extremeShare()} districts sit at one end or
+        the other — see the note below the map.</p>`;
+  paintTiltChips(el);
+}
+
+/* ------------------------------------------------------------------ */
+/*  The plate change                                                   */
+/* ------------------------------------------------------------------ */
+
+/**
+ * National and state are two separate renders with a transition between
+ * them — NOT a free zoom. A blow-up is a new plate, which is what riso does,
+ * and it sidesteps the MapLibre CustomLayerInterface + stencil-buffer risk
+ * entirely this round.
+ *
+ * The one-shot press cycle fires on ARRIVING somewhere new, so the plates
+ * are seen laying down in sequence. Under reduced motion `press()` becomes a
+ * single non-spatial dot-gain pulse instead — see plate.js.
+ */
+function goTo(next) {
+  view = { ...view, ...next };
+  if (next.mode === "national") view.st = null;
+  inner.classList.add("is-swapping");
+  const go = () => {
+    inner.classList.remove("is-swapping");
+    layout();
+    press.press();
+    drawLines();
+    sheet(null);
+  };
+  if (press.reducedMotion) go();
+  else setTimeout(go, 180);
+}
+
+/* ------------------------------------------------------------------ */
+/*  The sheet — the shared one, plus the party split                   */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The party block, appended to the shared sheet rather than replacing it.
+ *
+ * atlas.js is shared with D and F and is not this prototype's to edit, so
+ * the tilt E encodes is added here, above the sheet's own footnote. It says
+ * in words what the hue says in colour, and it is where "no major-party
+ * money" and "evenly split" are actually distinguished.
+ */
+function partyBlockHTML(p) {
+  const t = tiltOf(p);
+  const pl = dark ? SYS.platesDark : SYS.plates;
+  const rows = [
+    ["Republican", p.rep_cents || 0, pl.rep],
+    ["Democratic", p.dem_cents || 0, pl.dem],
+    ["Other / none", p.oth_cents || 0, pl.neutral],
+  ].filter(([, c]) => c !== 0);
+  const tot = rows.reduce((a, [, c]) => a + Math.abs(c), 0) || 1;
+  const read = t === null
+    ? `<b>No major-party money.</b> Nothing here went to a Republican or a
+       Democratic candidate, so there is no tilt to print. It lands on the
+       neutral drum for want of anywhere else — which is <em>not</em> the same
+       fact as an even split.`
+    : t === 0
+      ? `<b>Evenly split.</b> The two parties received the same amount, so the
+         whole of this district's ink is on the neutral drum. That is a
+         measured even split, not an absence of party money.`
+      : `<b>Tilt ${t > 0 ? "R" : "D"} ${(Math.abs(t) * 100).toFixed(0)}%</b> —
+         the margin between the two parties as a share of what they received
+         between them. The ink is split in that proportion between the
+         ${t > 0 ? "red" : "blue"} drum and the neutral one.`;
+  return `<div class="sector-block">
+    <div class="sector-label">Party of the recipient</div>
+    ${rows.map(([name, cents, ink]) => `
+      <div class="sector-row">
+        <span class="sector-swatch" style="--ink:${ink}"></span>
+        <span class="sector-name">${name}</span>
+        <span class="sector-amt">${usdCompact(cents)}</span>
+        <span class="sector-pct">${(Math.abs(cents) / tot * 100).toFixed(0)}%</span>
+      </div>
+      <div class="sector-bar"><i style="--ink:${ink};width:${
+        (Math.max(0, cents) / tot * 100).toFixed(1)}%"></i></div>`).join("")}
+    <div class="tilt-read">${read}</div>
+  </div>`;
+}
+
+function sheet(shape) {
+  const el = document.getElementById("sheet");
+  renderSheet(el, shape, atlas.sectors, SYS, dark);
+  if (!shape) return;
+  const foot = el.querySelector(".sheet-foot");
+  if (foot) foot.insertAdjacentHTML("beforebegin", partyBlockHTML(shape.props));
+}
+
+/* ------------------------------------------------------------------ */
+/*  Interaction                                                        */
+/* ------------------------------------------------------------------ */
+
+const tip = Object.assign(document.createElement("div"), { className: "tip" });
+tip.hidden = true; document.body.appendChild(tip);
+
+const hit = (e) => {
+  const r = lines.getBoundingClientRect();
+  return picker((e.clientX - r.left) * (W / r.width),
+                (e.clientY - r.top) * (H / r.height));
+};
+
+lines.style.pointerEvents = "auto";
+lines.addEventListener("pointermove", (e) => {
+  const i = hit(e);
+  if (i !== hov) { hov = i; drawLines(); }
+  if (i >= 0) {
+    const p = shapes[i].props;
+    const senate = view.mode === "national" && view.layer === "senate";
+    tip.innerHTML = senate
+      ? `<b>${p.state}</b> <span class="tip-amt">${
+          p.has_senate ? usdCompact(p.total_cents) : "no Senate seats"}</span>${
+          p.has_senate ? `<span class="tip-flag">${tiltPhrase(p)}</span>` : ""}${
+          p.has_senate && !p.seat_up
+            ? `<span class="tip-flag">Coarse screen — banked, no seat up in ${CYCLE}</span>` : ""}`
+      : `<b>${p.state}-${p.cd}</b> <span class="tip-amt">${usdCompact(p.pac_cents)}</span>`
+        + `<span class="tip-flag">${tiltPhrase(p)}</span>${
+          p.map_status === "cd119_superseded"
+            ? `<span class="tip-flag">Coarse screen — superseded map</span>` : ""}`;
+    tip.style.left = `${e.clientX}px`; tip.style.top = `${e.clientY}px`;
+    tip.hidden = false;
+  } else tip.hidden = true;
+});
+lines.addEventListener("pointerleave", () => {
+  hov = -1; tip.hidden = true; drawLines();
+});
+lines.addEventListener("click", (e) => {
+  const i = hit(e);
+  if (i < 0) return;
+  const p = shapes[i].props;
+  // At national level, clicking a state on the Senate layer is the shortcut
+  // into that state's blow-up. The <select> stays the primary control,
+  // because a map you can only enter by clicking a 2px polygon is not
+  // reachable by keyboard.
+  if (view.mode === "national" && view.layer === "senate") {
+    if (p.has_senate) goTo({ mode: "state", st: p.state });
+    return;
+  }
+  sel = i; drawLines();
+  sheet(shapes[i]);
+});
+
+document.getElementById("theme").addEventListener("click", (e) => {
+  dark = !dark;
+  document.documentElement.dataset.theme = dark ? "dark" : "light";
+  e.target.setAttribute("aria-pressed", String(dark));
+  e.target.textContent = dark ? "Warm stock" : "Dark stock";
+  // The two stocks have different step tables, so the MESH changes, not
+  // just the ink uniforms — see stepTable().
+  const keep = sel;
+  layout();
+  sel = keep;
+  paint(); drawLines(); paintColophon();
+  if (sel >= 0) sheet(shapes[sel]);
+});
+
+document.getElementById("layer").addEventListener("click", (e) => {
+  const senate = view.layer !== "senate";
+  e.target.setAttribute("aria-pressed", String(senate));
+  e.target.textContent = senate ? "House layer" : "Senate layer";
+  goTo({ layer: senate ? "senate" : "house" });
+});
+
+document.getElementById("motion").addEventListener("click", (e) => {
+  breathing = !breathing;
+  e.target.setAttribute("aria-pressed", String(breathing));
+  e.target.textContent = breathing ? "Press breathing" : "Plates held still";
+  press.setBreathing(breathing);
+});
+
+/**
+ * Table view. Identity is never colour-alone, and on a bivariate map that
+ * means BOTH channels have to be in the table — the money is already there,
+ * so the party split is added to it.
+ *
+ * Added by DOM surgery on the shared renderer's output rather than by editing
+ * atlas.js, which D and F also render from. Rows are matched back to their
+ * properties by the row header the shared renderer writes.
+ */
+function augmentTable(el, byKey, keyOf) {
+  const table = el.querySelector("table");
+  if (!table) return;
+  table.querySelector("thead tr").insertAdjacentHTML("beforeend",
+    `<th scope="col" class="num">Republican</th>
+     <th scope="col" class="num">Democratic</th>
+     <th scope="col">Party tilt</th>`);
+  for (const tr of table.querySelectorAll("tbody tr")) {
+    const p = byKey.get(tr.querySelector("th").textContent.trim());
+    if (!p) continue;
+    tr.insertAdjacentHTML("beforeend",
+      `<td class="num">${usd(p.rep_cents || 0)}</td>
+       <td class="num">${usd(p.dem_cents || 0)}</td>
+       <td>${tiltCell(p)}</td>`);
+  }
+}
+
+document.getElementById("tabletoggle").addEventListener("click", (e) => {
+  const t = document.getElementById("table");
+  t.hidden = !t.hidden;
+  e.target.setAttribute("aria-pressed", String(!t.hidden));
+  if (t.hidden) return;
+  if (view.mode === "national" && view.layer === "senate") {
+    renderSenateTable(t, atlas.states.features, atlas.senate);
+    augmentTable(t, new Map(atlas.states.features
+      .map((f) => [f.properties.state, f.properties])));
+  } else {
+    const feats = view.mode === "state"
+      ? districtsOf(atlas, view.st) : atlas.districts.features;
+    renderTable(t, feats.map((f) => ({ props: f.properties })), { cycle: CYCLE });
+    augmentTable(t, new Map(feats
+      .map((f) => [`${f.properties.state}-${f.properties.cd}`, f.properties])));
+  }
+});
+
+/* ------------------------------------------------------------------ */
+/*  The finding                                                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The tilt histogram, computed from the loaded artifact rather than pasted in
+ * as a constant — the same rule quantileBreaks follows, and for the same
+ * reason: a number in prose that cannot drift with the data is the only kind
+ * worth printing on a page that reloads live filings.
+ */
+function tiltHistogram(features) {
+  const bins = new Array(10).fill(0);
+  let none = 0, near = 0;
+  for (const f of features) {
+    const t = tiltOf(f.properties);
+    if (t === null) { none++; continue; }
+    bins[Math.min(9, Math.floor((t + 1) / 2 * 10))]++;
+    if (Math.abs(t) < 0.2) near++;
+  }
+  return { bins, none, near, n: features.length - none };
+}
+
+const HIST = tiltHistogram(atlas.districts.features);
+const extremeShare = () => {
+  const ext = HIST.bins[0] + HIST.bins[9];
+  return `${ext} of ${HIST.n} (${(ext / HIST.n * 100).toFixed(0)}%)`;
+};
+
+const BIN_LABELS = [
+  "D 100–80", "D 80–60", "D 60–40", "D 40–20", "D 20–0",
+  "R 0–20", "R 20–40", "R 40–60", "R 60–80", "R 80–100",
+];
+
+function paintColophon() {
+  const pl = dark ? SYS.platesDark : SYS.plates;
+  const max = Math.max(...HIST.bins) || 1;
+  document.getElementById("co-hist").innerHTML = HIST.bins.map((n, i) => `
+    <div class="hist-row">
+      <span>${BIN_LABELS[i]}</span>
+      <span class="hist-track" aria-hidden="true"><i style="width:${
+        (n / max * 100).toFixed(1)}%;background:${i < 5 ? pl.dem : pl.rep}"></i></span>
+      <span class="hist-n">${n}</span>
+    </div>`).join("");
+
+  const party = atlas.meta.party;
+  document.getElementById("co-nat").textContent =
+    `REP ${usdCompact(party.rep_cents)} against DEM ${usdCompact(party.dem_cents)}`;
+  document.getElementById("co-n").textContent = String(HIST.n);
+  document.getElementById("co-extreme").textContent =
+    `${HIST.bins[0] + HIST.bins[9]} of ${HIST.n} — ${
+      ((HIST.bins[0] + HIST.bins[9]) / HIST.n * 100).toFixed(0)}% —`;
+  document.getElementById("co-near").textContent = `only ${HIST.near}`;
+  document.getElementById("co-none").textContent = HIST.none === 0
+    ? `Every district in ${CYCLE} has some major-party money.`
+    : `${HIST.none} district${HIST.none === 1 ? "" : "s"} ${
+        HIST.none === 1 ? "is" : "are"} in that state in ${CYCLE}.`;
+  document.getElementById("co-histcap").textContent =
+    `Districts by party tilt of the money they received, ${CYCLE} cycle. `
+  + `Bins are 20 points of margin wide, all-Democratic at the top.`;
+}
+paintColophon();
+
+/* ------------------------------------------------------------------ */
+
+press = createPress(glc, { nPlates: 3, angles: ANGLES, onFrame: drawLines });
+window.__press = press;                       // the harness asserts the re-screen
+
+if (!press) {
+  document.getElementById("stage").innerHTML =
+    `<div class="nogl">No WebGL2 on this device. That is the honest failure
+     mode for this prototype and it is part of what is being weighed:
+     prototype A needs nothing but SVG and renders the same data
+     everywhere.</div>`;
+  // The fallback removes the stage, and with it #offmap and #statebar. Any
+  // control that re-runs layout() would then write innerHTML to null. A
+  // degraded page must degrade all the way rather than leave a live button
+  // over a hole — so disable everything that touches the map and leave the
+  // table, which still works.
+  for (const id of ["theme", "layer", "motion"]) {
+    const el = document.getElementById(id);
+    if (el) { el.disabled = true; el.title = "Needs WebGL2"; }
+  }
+  const pk = document.querySelector("#statepick");
+  if (pk) pk.disabled = true;
+  document.getElementById("perf").textContent = "WebGL2 unavailable";
+  paintLegend();
+  sheet(null);
+} else {
+  layout();
+  drawLines();
+  sheet(null);
+  press.setBreathing(true);
+  press.press();
+  window.addEventListener("resize", debounce(() => { layout(); drawLines(); }, 160));
+  if (press.reducedMotion) {
+    const m = document.getElementById("motion");
+    m.disabled = true;
+    m.textContent = "Reduced motion — dot gain only";
+    m.title = "prefers-reduced-motion is on: no plate moves. The press cycle "
+            + "becomes a single dot-gain pulse.";
+  }
+  const t1 = performance.now();
+  document.getElementById("perf").textContent =
+    `data ${tLoad.toFixed(0)}ms · mesh ${mesh.count.toLocaleString()} verts · `
+  + `first paint ${(t1 - t0).toFixed(0)}ms`;
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,774 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sector Plates — riso prototype F</title>
+<link rel="stylesheet" href="./fonts.css">
+<link rel="stylesheet" href="./shared/base.css">
+<style>
+/* ==================================================================
+   F — SECTOR PLATES
+   Four literal plates, one per donor sector, four screen angles.
+
+   A district's COLOUR IS ITS DONOR MIX; its TOTAL INK IS ITS MONEY.
+   This is the most riso-true answer the round has: nothing is looked
+   up in a ramp, the tone is what four drums leave on the paper.
+
+   Every other thing on this page — the shell, the controls, the
+   Senate layer, the state blow-up, the mid-cycle band, the table,
+   the fallback — is D's, deliberately. Round 2 is a comparison of
+   ENCODINGS, and chrome that differs between D, E and F would be
+   comparing something else.
+   ================================================================== */
+:root { --paper: #F5F3EE; }
+[data-theme="dark"] { --paper: #17171A; }
+
+.stage-inner { position: relative; background: var(--paper); }
+.stage-inner canvas { display: block; width: 100%; height: auto; }
+#lines { position: absolute; inset: 0; }
+
+/* Only the paper tooth — the halftone IS the texture, and mottle on top of
+   a dot screen reads as dirt rather than as print. */
+.stage-inner::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background-image: url("./texture/grain-128.png"); background-size: 128px;
+  mix-blend-mode: multiply; opacity: .30;
+}
+[data-theme="dark"] .stage-inner::after { mix-blend-mode: screen; opacity: .16; }
+
+.legend-chip { border: none; background: none !important; }
+.legend-chip canvas { width: 30px; height: 13px; display: block; }
+/* The plate key is wider than the money ramp's chips on purpose: F's whole
+   claim is that the reader can tell two MIXES apart, and a 30×13 chip is
+   too small to judge an overprint on. */
+.ink-chip { width: 52px; height: 18px; flex: none; }
+.ink-chip canvas { width: 52px; height: 18px; display: block; }
+.legend-note {
+  font-size: 11px; line-height: 1.4; color: var(--ink-3);
+  margin: 8px 0 0; max-width: 40ch;
+}
+.lv-mark { border: 1px solid var(--rule); }
+.lv-current   { background: repeating-linear-gradient(90deg, var(--ink) 0 1px, transparent 1px 2px); }
+.lv-contested { background: repeating-linear-gradient(90deg, var(--ink) 0 2px, transparent 2px 5px); }
+.lv-stale     { background: repeating-linear-gradient(90deg, var(--ink) 0 3px, transparent 3px 9px); }
+.masthead h1 { font-size: clamp(42px, 8vw, 88px); }
+.nogl { padding: 30px; border: 2px solid var(--stale); color: var(--stale); font-size: 13px; }
+</style>
+</head>
+<body>
+<a class="skip" href="#stage">Skip to the map</a>
+<div id="shell"></div>
+<div class="band" id="band" role="note"></div>
+<div class="controls">
+  <button class="ctl" id="theme" aria-pressed="false">Dark stock</button>
+  <button class="ctl" id="layer" aria-pressed="false">Senate layer</button>
+  <button class="ctl" id="tabletoggle" aria-pressed="false">Table view</button>
+  <button class="ctl" id="motion" aria-pressed="true">Press breathing</button>
+  <span id="picker"></span>
+  <span class="stage-note" id="perf"></span>
+</div>
+<div class="statebar" id="statebar" hidden></div>
+<div class="wrap">
+  <div class="stage" id="stage">
+    <div class="stage-inner" id="inner">
+      <canvas id="gl" role="img" aria-label=""></canvas>
+      <canvas id="lines" aria-hidden="true"></canvas>
+    </div>
+    <div class="stage-note"><span id="countline"></span></div>
+    <div class="offmap" id="offmap"></div>
+  </div>
+  <aside class="rail">
+    <div id="legend"></div>
+    <div class="sheet" id="sheet" aria-live="polite"></div>
+  </aside>
+</div>
+<div class="tablewrap" id="table" hidden></div>
+<div class="colophon">
+  <h2>Prototype F — Sector Plates</h2>
+  <p><strong>Thesis:</strong> four drums, one per donor sector, each at its own
+  screen angle. A district's <em>colour is its donor mix</em> and its
+  <em>total ink is its money</em>. Nothing here is sampled from a ramp: the
+  tone is whatever four overprinting screens leave on the paper, which is what
+  a four-colour riso actually does. D is the control — money only — and F is
+  the same money carrying a second, categorical channel for free.</p>
+  <p><strong>Why there are four plates and not three.</strong> The round-2 plan
+  named three: Corporate, Trade Association, Labor. Measured on the 2026
+  artifact, those three cover only <strong>61.92%</strong> of a district's PAC
+  dollars on average (median 66.62%), and two districts have none of them at
+  all. The remainder is Leadership PAC ($38.1M), Membership ($27.9M),
+  Unclassified ($22.0M), Candidate Committee ($10.2M) and a long tail. Three
+  plates alone would print a district's total ink as 62% of its money while the
+  page claimed that total ink <em>is</em> the money — the same class of error as
+  this project's standing rule that itemized is never presented as total. So a
+  fourth, deliberately neutral, low-chroma plate carries the remainder and is
+  labelled <em>All other sectors</em> in the legend. It is a remainder, never a
+  fifth category with a meaning of its own.</p>
+  <p><strong>The three named plates are not the top three by dollars, and that
+  is on purpose.</strong> Nationally in 2026 the order is Corporate $117.7M ·
+  Trade Association $59.0M · <em>Leadership PAC $38.1M</em> · Labor $32.8M ·
+  Membership $27.9M. Leadership PAC is third and it goes into the neutral
+  plate; Labor is fourth and gets a drum. Corporate / trade / labour is the
+  distinction this map exists to draw, and it survives a cycle in which labour
+  money happens to be smaller than one sector of intra-party transfers.
+  <code>SECTOR_ORDER</code> in <code>inks.js</code> is measured and is 2024's
+  order; it is not what picks these plates, so nobody should "fix" this later
+  by re-deriving the plates from it.</p>
+  <p><strong>Total ink is exactly the money, whatever the mix.</strong>
+  <code>proportionalPlates</code> gives plate <em>i</em> a coverage of
+  1 − (1 − C)<sup>s<sub>i</sub></sup>, so the paper left in the halftone cell
+  composites to exactly (1 − C) — the money — regardless of how one-sided the
+  district is. A district that is all corporate runs the full 0.20 → 0.88 on
+  one drum; an evenly-mixed one lands at 0.412 on each of four. Both leave the
+  same 12% of the cell as paper at the top of the range, which is what keeps
+  the certainty screen legible on the districts with the most money, and what
+  makes D, E and F show the same amount of ink for the same dollars.</p>
+  <p><strong>Zoom:</strong> a blow-up is a NEW PLATE, re-screened coarser
+  (3.6px cells nationally, 8px in a state), not a camera move over the same
+  one. The certainty ratios scale with it, so a superseded district stays
+  2.33&times; coarser than a current one at either size.</p>
+  <p><strong>Colour is provisional.</strong> The four inks are referenced by
+  name from <code>F.plates</code> and are still placeholders: they have not
+  been through <code>validate_palette.js</code>, and in particular their
+  <em>overprints</em> have not been checked for mutual distinguishability,
+  which is the check F needs and D does not.</p>
+</div>
+
+<script src="./vendor/d3-array.min.js"></script>
+<script src="./vendor/d3-geo.min.js"></script>
+<script src="./vendor/earcut.min.js"></script>
+<script type="module">
+import { F, densityT, proportionalPlates, usdCompact, usd, SCREEN_ANGLES,
+         COVERAGE_FLOOR, COVERAGE_CEIL } from "./shared/inks.js";
+import { halftoneRect } from "./shared/screens.js";
+import { loadAtlas, makeProjection, projectAll, measure, makePicker,
+         partitionProjectable, renderOffmap, renderSheet, renderTable,
+         renderLegend, shellHTML, debounce } from "./shared/atlas.js";
+import { createPress, triangulatePlates, MAX_PLATES } from "./shared/plate.js";
+import { CELL, FLAT_CELL, NATIONAL_SCALE, STATE_SCALE, makeStateProjection,
+         districtsOf, stateIndex, quantileBreaks, renderCycleBand,
+         renderSenateLegend, renderSenateSheet, renderSenateTable,
+         renderStateBar, renderStatePicker } from "./shared/view.js";
+
+const SYS = F;
+const CYCLE = "2026";
+
+/* The four plates, in slot order, matching F.plates in inks.js. The order is
+   the vertex layout's order and the legend's order and the ink array's order
+   — one list, so they cannot drift apart. */
+const PLATES = ["corporate", "trade", "labor", "other"];
+const PLATE_LABEL = {
+  corporate: "Corporate",
+  trade: "Trade Association",
+  labor: "Labor",
+  // Named in full, always. An unlabelled fourth ink would read as a fifth
+  // category with a meaning of its own; it is a REMAINDER.
+  other: "All other sectors",
+};
+/* The sector names each plate claims. Everything not listed falls to `other`.
+   Matching is by exact name against the artifact's own strings. */
+const PLATE_SECTORS = {
+  corporate: ["Corporate"],
+  trade: ["Trade Association"],
+  labor: ["Labor"],
+};
+
+/**
+ * Four plates, four angles. GLOBAL — one angle per plate for the whole sheet,
+ * never per district: per-district angles are precisely what makes two
+ * adjacent polygons vibrate against each other.
+ *
+ * 15/45/75 is the classic three-colour separation and 0 is the conventional
+ * fourth. Which plate gets which angle follows the CMYK convention rather
+ * than the slot order: 45° is the angle the eye picks up least, so it goes to
+ * the plate that is largest nationally and therefore most often the dominant
+ * screen (corporate, $117.7M); 0°/90° is the angle the eye picks up MOST, so
+ * it goes to the lowest-chroma ink, where a conspicuous screen does least
+ * damage — the same reason yellow prints at 0° in process work.
+ */
+const ANGLE = {
+  corporate: SCREEN_ANGLES.key,       // 45
+  trade: SCREEN_ANGLES.color,         // 15
+  labor: SCREEN_ANGLES.second,        // 75
+  other: 0,
+};
+const ANGLES = PLATES.map((k) => ANGLE[k]);
+
+let dark = false, shapes = [], picker = null, sel = -1, hov = -1;
+let W = 0, H = 0, atlas = null, offmap = [], press = null, mesh = null;
+let view = { mode: "national", st: null, layer: "house" };
+let breathing = true;
+
+const glc = document.getElementById("gl");
+const lines = document.getElementById("lines");
+const inner = document.getElementById("inner");
+
+const t0 = performance.now();
+atlas = await loadAtlas(CYCLE, { senate: true });
+window.__atlas = atlas;                       // the harness asserts against this
+const tLoad = performance.now() - t0;
+
+const BREAKS = atlas.meta.breaks_cents;
+const SEN_BREAKS = quantileBreaks(
+  atlas.states.features.filter((f) => f.properties.has_senate)
+    .map((f) => f.properties.total_cents));
+const SEN_LABELS = (() => {
+  const s = (c) => usdCompact(c);
+  return [`< ${s(SEN_BREAKS[0])}`,
+    ...SEN_BREAKS.slice(0, -1).map((b, i) => `${s(b)}–${s(SEN_BREAKS[i + 1])}`),
+    `> ${s(SEN_BREAKS.at(-1))}`];
+})();
+
+document.getElementById("shell").innerHTML = shellHTML({
+  kicker: `follow the donors · prototype F · ${CYCLE} cycle`,
+  title: "Sector Plates",
+  thesis: "Four drums, one per donor sector. A district's colour is its donor "
+        + "mix and its total ink is its money; how coarse the screen is, is how "
+        + "sure we are the district is still shaped like that.",
+  meta: atlas.meta,
+});
+renderCycleBand(document.getElementById("band"), atlas.meta);
+renderStatePicker(document.getElementById("picker"), stateIndex(atlas),
+                  (st) => goTo({ mode: "state", st }));
+
+/**
+ * The money→coverage table for the stock currently on the press.
+ *
+ * Light and dark have DIFFERENT tables, not a scaled one: subtractive ink on
+ * paper and additive light on a dark ground reach their floors at different
+ * coverages, and each was solved against its own model. The mesh therefore
+ * has to be rebuilt when the stock changes, which is why the theme toggle
+ * runs layout() rather than only repainting.
+ */
+const stepTable = () => (dark ? SYS.tableDark : SYS.table);
+
+/* ------------------------------------------------------------------ */
+/*  Encoders — the ONLY thing that differs between D, E and F          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A sector row list → the four plate weights, in slot order.
+ *
+ * Two things here are not decoration:
+ *
+ *  1. SECTOR NAMES REPEAT WITHIN A DISTRICT. The artifact is a list, not a
+ *     map, and 398 of the 441 districts carry at least one duplicated sector
+ *     name (869 extra rows in all) — "Labor" and "Unclassified" commonly
+ *     appear twice. Taking the FIRST match with `find` silently drops the
+ *     rest: it understates the three named plates by 0.4 points of the mix on
+ *     average and by 16 points in the worst district (NY-14, 65.8% instead of
+ *     81.9%), and quietly moves that money to the neutral plate. Every row is
+ *     summed.
+ *
+ *  2. THE REMAINDER IS COMPUTED FROM THE ROWS, not from `pac_cents`. Thirty
+ *     districts' sector rows do not sum to their `pac_cents` (by up to
+ *     $12,700), so subtracting from the money would leak that gap into the
+ *     neutral plate as if it were sector money. The money decides how MUCH
+ *     ink; the rows decide only the MIX.
+ *
+ * Contribution rows can be negative (a refund exceeding receipts in the
+ * period), so weights are clamped at zero — a negative share of a plate is
+ * not a thing a press can print.
+ */
+function sectorParts(rows) {
+  const parts = [0, 0, 0, 0];
+  for (const [name, cents] of rows || []) {
+    const i = PLATES.findIndex((k) => PLATE_SECTORS[k]?.includes(name));
+    parts[i === -1 ? 3 : i] += cents;
+  }
+  for (let i = 0; i < 4; i++) parts[i] = Math.max(0, parts[i]);
+  // No sector rows at all is an UNKNOWN mix, not an absence of money: it goes
+  // wholly to the neutral plate, which is exactly what "all other sectors"
+  // means. Printing blank paper here would say the district received nothing.
+  if (parts.reduce((a, b) => a + b, 0) <= 0) parts[3] = 1;
+  return parts;
+}
+
+/** F: split the money across four plates BY SECTOR SHARE. Total ink is the
+ *  money; the colour is the mix. */
+const encodeHouse = () => (p) => ({
+  cov: proportionalPlates(densityT(p.pac_cents, BREAKS),
+                          sectorParts(atlas.sectors[p.geoid]), stepTable()),
+  cell: (CELL[p.map_status] ?? FLAT_CELL) * 1,
+});
+
+/**
+ * The Senate layer uses the SAME four plates, with the state's own sector mix
+ * and its Senate total — not a plain money ramp. `senate.states[ST].sectors`
+ * conserves the Senate total to the dollar, so the identical claim holds:
+ * total ink is the money, colour is the mix.
+ *
+ * The coarse screen reuses the district layer's meaning, and that reuse is
+ * the point rather than a shortcut: one grammar across both layers —
+ * *this figure is not what it appears to be*. On the district layer it is a
+ * superseded boundary; here it is money banked for an election that is not
+ * this one.
+ *
+ * A state with no Senate representation gets NO PLATE AT ALL. Printing it as
+ * zero would put it alongside states that genuinely received nothing, and
+ * that is a different fact.
+ */
+const encodeSenate = () => (p) => ({
+  cov: p.has_senate
+    ? proportionalPlates(densityT(p.total_cents, SEN_BREAKS),
+                         sectorParts(p.sectors), stepTable())
+    : [0, 0, 0, 0],
+  cell: p.seat_up ? CELL.cd119_current : CELL.cd119_superseded,
+});
+
+/** The national mix, summed off the loaded artifact rather than shipped as a
+ *  constant — it is what the legend's money ramp is painted in, so it must
+ *  come from the same data the map does. */
+const NATIONAL_PARTS = (() => {
+  const parts = [0, 0, 0, 0];
+  for (const rows of Object.values(atlas.sectors)) {
+    const p = sectorParts(rows);
+    for (let i = 0; i < 4; i++) parts[i] += p[i];
+  }
+  return parts;
+})();
+
+/* ------------------------------------------------------------------ */
+
+function plateInks() {
+  const p = dark ? SYS.platesDark : SYS.plates;
+  return PLATES.map((k) => p[k]);
+}
+
+/**
+ * The sheet's sector swatches, re-inked to the plates.
+ *
+ * `renderSheet` colours its breakdown by SECTOR_ORDER out of `sys.inks`, which
+ * is a five-hue categorical set and NOT F's four-plate set — on this page that
+ * would put a colour beside "Leadership PAC" that appears nowhere on the map.
+ * Rather than edit the shared sheet, F hands it a `sys` whose ink array is the
+ * plate set in SECTOR_ORDER's positions, so the panel says what the map says:
+ * Corporate, Trade Association and Labor in their own ink, and everything else
+ * — Leadership PAC and Membership included — in the neutral remainder ink.
+ */
+function sheetSys() {
+  const p = dark ? SYS.platesDark : SYS.plates;
+  //                Corporate     Trade      Leadership  Labor      Membership
+  const inks = [p.corporate, p.trade, p.other, p.labor, p.other];
+  return { ...SYS, inks, inksDark: inks, other: p.other };
+}
+
+function currentFeatures() {
+  if (view.mode === "state") return districtsOf(atlas, view.st);
+  if (view.layer === "senate") return atlas.states.features;
+  return atlas.districts.features;
+}
+
+function layout() {
+  const box = document.getElementById("stage").getBoundingClientRect();
+  W = Math.max(320, Math.round(box.width));
+  H = Math.round(W * 0.60);
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  press.resize(W, H, dpr);
+  lines.width = Math.round(W * dpr); lines.height = Math.round(H * dpr);
+  lines.style.width = `${W}px`; lines.style.height = `${H}px`;
+
+  const senate = view.mode === "national" && view.layer === "senate";
+  let feats, proj;
+
+  if (view.mode === "state") {
+    // A single state gets its OWN conic, not a fitted Albers USA — see
+    // makeStateProjection. This is also the only view in which the five
+    // territory delegations can be drawn at all.
+    feats = districtsOf(atlas, view.st);
+    proj = makeStateProjection(feats, W, H);
+    offmap = [];
+    press.setCellScale(STATE_SCALE);
+  } else {
+    const src = senate
+      ? { type: "FeatureCollection", features: atlas.states.features }
+      : atlas.districts;
+    const part = partitionProjectable(src);
+    feats = part.mapped.features;
+    offmap = senate ? [] : part.offmap;
+    proj = makeProjection(part.mapped, W, H);
+    press.setCellScale(NATIONAL_SCALE);
+  }
+
+  const encode = senate ? encodeSenate() : encodeHouse();
+  shapes = measure(projectAll({ type: "FeatureCollection", features: feats }, proj));
+  mesh = triangulatePlates(feats, proj, encode);
+  press.setMesh(mesh.data, mesh.count);
+  picker = makePicker(shapes, W, H, 1);
+  sel = -1; hov = -1;
+
+  glc.setAttribute("aria-label", senate
+    ? `Halftone map of PAC contributions to Senate candidates by state, ${CYCLE
+      } cycle, printed on four sector plates`
+    : view.mode === "state"
+      ? `Halftone map of PAC contributions by congressional district in ${
+          view.st}, ${CYCLE} cycle, printed on four sector plates`
+      : `Halftone map of PAC contributions by congressional district, ${CYCLE
+        } cycle, printed on four sector plates`);
+
+  paint();
+  renderOffmap(document.getElementById("offmap"), offmap, SYS, dark, (geoid) => {
+    const f = offmap.find((x) => x.properties.geoid === geoid);
+    renderSheet(document.getElementById("sheet"), { props: f.properties },
+                atlas.sectors, sheetSys(), dark);
+  }, BREAKS);
+
+  renderStateBar(document.getElementById("statebar"), {
+    state: view.mode === "state" ? view.st : null,
+    districts: view.mode === "state" ? districtsOf(atlas, view.st) : [],
+    senate: view.mode === "state"
+      ? atlas.states.features.find((f) => f.properties.state === view.st)?.properties
+      : null,
+    cycle: CYCLE,
+  });
+  const back = document.getElementById("backtonational");
+  if (back) back.addEventListener("click", () => goTo({ mode: "national" }));
+
+  document.getElementById("countline").textContent = senate
+    ? `WebGL2 halftone · four sector plates · ${shapes.length} states`
+    : `WebGL2 halftone · four sector plates · Kubelka-Munk overprint · ${
+        shapes.length} districts`;
+  // The layer toggle only means something nationally. In a state blow-up the
+  // plan is explicit: House districts stay as the fill and Senate money gets
+  // its own plate in the margin — both, not either.
+  const lay = document.getElementById("layer");
+  lay.disabled = view.mode === "state";
+  lay.title = view.mode === "state"
+    ? "In a state view both layers are shown — House as the fill, Senate in the rail"
+    : "";
+}
+
+function paint() {
+  press.setPaper(dark ? SYS.paperDark : SYS.paper);
+  press.setDark(dark);
+  press.setInks(plateInks());
+  press.draw();
+  paintLegend();
+}
+
+function drawLines() {
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const ctx = lines.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  const trace = (s) => {
+    ctx.beginPath();
+    for (const r of s.rings) {
+      ctx.moveTo(r.xy[0], r.xy[1]);
+      for (let k = 2; k < r.xy.length; k += 2) ctx.lineTo(r.xy[k], r.xy[k + 1]);
+      ctx.closePath();
+    }
+  };
+  // Registration is PERFECT. The keyline is one weight everywhere and stays
+  // the heaviest mark on the sheet; all the uncertainty is in the screen.
+  ctx.lineWidth = view.mode === "state" ? 1.1 : 0.75;
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = dark ? "rgba(237,237,230,.50)" : "rgba(27,27,24,.62)";
+  for (const s of shapes) { trace(s); ctx.stroke(); }
+  if (hov >= 0 && hov !== sel) {
+    ctx.lineWidth = 1.8; ctx.strokeStyle = dark ? "#EDEDE6" : "#1b1b18";
+    trace(shapes[hov]); ctx.stroke();
+  }
+  if (sel >= 0) {
+    ctx.lineWidth = 2.4; ctx.strokeStyle = dark ? "#EDEDE6" : "#1b1b18";
+    trace(shapes[sel]); ctx.stroke();
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Legend                                                             */
+/* ------------------------------------------------------------------ */
+
+/** One real halftone swatch, painted through the same four-plate path the map
+ *  uses — additive in dark mode, matching the shader. A legend that
+ *  composites differently from the map is a legend for a different map. */
+function swatch(cov, w, h, cell) {
+  const cv = document.createElement("canvas");
+  cv.width = w; cv.height = h;
+  const c = cv.getContext("2d");
+  c.fillStyle = dark ? SYS.paperDark : SYS.paper;
+  c.fillRect(0, 0, w, h);
+  const pl = plateInks();
+  c.globalCompositeOperation = dark ? "lighter" : "source-over";
+  for (let k = 0; k < PLATES.length; k++) {
+    halftoneRect(c, 0, 0, w, h, pl[k], ANGLES[k], cov[k], cell);
+  }
+  c.globalCompositeOperation = "source-over";
+  return cv;
+}
+
+/**
+ * The plate key: each ink ALONE, then real overprints.
+ *
+ * F claims a reader can tell mixes apart, so the legend has to be the place
+ * that claim is testable. Each of the four plates is shown at the coverage a
+ * district gets when ALL of its money is on that one plate at the top of the
+ * range (0.88) — the ink at its truest — and then four mixes are printed
+ * exactly as the map would print them.
+ */
+/* One list of rows, used by both the markup and the painter, so a label can
+   never end up beside the wrong swatch. */
+const KEY_ROWS = PLATES.map((k) => ({
+  parts: PLATES.map((p) => (p === k ? 1 : 0)), lab: PLATE_LABEL[k],
+}));
+const MIX_ROWS = [
+  { parts: NATIONAL_PARTS, lab: "The national mix" },
+  { parts: [1, 0, 1, 0], lab: "Corporate + labour, evenly" },
+  { parts: [1, 1, 0, 0], lab: "Corporate + trade, evenly" },
+  { parts: [1, 1, 1, 1], lab: "All four, evenly" },
+];
+
+function plateKeyHTML() {
+  return `
+    <div class="legend-title legend-title-2">The four plates, at full ink</div>
+    <div class="legend-ramp" id="platekey">${KEY_ROWS.map((r, i) => `
+      <div class="legend-step">
+        <span class="ink-chip" data-key="${i}"></span>
+        <span class="legend-lab">${r.lab}</span>
+      </div>`).join("")}</div>
+    <p class="legend-note">The fourth plate is a remainder, not a category.
+      Corporate, trade and labour money is only <b>61.92%</b> of an average
+      district's dollars, so without it the map would print 62% of the money
+      and claim to print all of it. Leadership PAC and Membership money — third
+      and fifth nationally — are inside it.</p>
+    <div class="legend-title legend-title-2">Overprints</div>
+    <div class="legend-ramp" id="platemix">${MIX_ROWS.map((r, i) => `
+      <div class="legend-step">
+        <span class="ink-chip" data-mix="${i}"></span>
+        <span class="legend-lab">${r.lab}</span>
+      </div>`).join("")}</div>`;
+}
+
+function paintPlateKey() {
+  document.querySelectorAll(".ink-chip[data-key]").forEach((el, i) => {
+    el.innerHTML = "";
+    el.appendChild(swatch(proportionalPlates(1, KEY_ROWS[i].parts), 52, 18, 7));
+  });
+  document.querySelectorAll(".ink-chip[data-mix]").forEach((el, i) => {
+    el.innerHTML = "";
+    el.appendChild(swatch(proportionalPlates(1, MIX_ROWS[i].parts), 52, 18, 7));
+  });
+}
+
+function paintLegend() {
+  const senate = view.mode === "national" && view.layer === "senate";
+  const el = document.getElementById("legend");
+  if (senate) {
+    renderSenateLegend(el, atlas.senate);
+    // The Senate layer prints on the same four plates, so it needs the same
+    // key. A legend for >= 2 series is not optional.
+    el.insertAdjacentHTML("beforeend", plateKeyHTML());
+    paintPlateKey();
+    return;
+  }
+  renderLegend(el, SYS, dark, {
+    cycle: CYCLE,
+    labels: atlas.meta.break_labels,
+    staleLabel: "Superseded — printed coarse; a redraw is in effect and we cannot draw it",
+  });
+  // The money ramp's chips are painted in the NATIONAL MIX, and say so. On
+  // this page there is no single colour for an amount of money — that is the
+  // whole thesis — so the ramp can only show how much INK a step is worth,
+  // in one particular mix, and the plate key below carries the colour.
+  el.querySelector(".legend-ramp").insertAdjacentHTML("afterend", `
+    <p class="legend-note">Total ink is the money; the colour is the mix. These
+      six steps are printed in the <b>national average mix</b> — a district's
+      own colour depends on where its money came from.</p>`);
+  document.querySelectorAll(".legend-chip").forEach((chip, i) => {
+    chip.innerHTML = "";
+    chip.appendChild(swatch(proportionalPlates(i / 5, NATIONAL_PARTS), 60, 26, 8.4));
+  });
+  el.insertAdjacentHTML("beforeend", plateKeyHTML());
+  paintPlateKey();
+}
+
+/* ------------------------------------------------------------------ */
+/*  The plate change                                                   */
+/* ------------------------------------------------------------------ */
+
+/**
+ * National and state are two separate renders with a transition between
+ * them — NOT a free zoom. A blow-up is a new plate, which is what riso does,
+ * and it sidesteps the MapLibre CustomLayerInterface + stencil-buffer risk
+ * entirely this round.
+ *
+ * The one-shot press cycle fires on ARRIVING somewhere new, so the plates
+ * are seen laying down in sequence. Under reduced motion `press()` becomes a
+ * single non-spatial dot-gain pulse instead — see plate.js.
+ */
+function goTo(next) {
+  view = { ...view, ...next };
+  if (next.mode === "national") view.st = null;
+  inner.classList.add("is-swapping");
+  const go = () => {
+    inner.classList.remove("is-swapping");
+    layout();
+    press.press();
+    drawLines();
+    renderSheet(document.getElementById("sheet"), null, atlas.sectors, sheetSys(), dark);
+  };
+  if (press.reducedMotion) go();
+  else setTimeout(go, 180);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Interaction                                                        */
+/* ------------------------------------------------------------------ */
+
+const tip = Object.assign(document.createElement("div"), { className: "tip" });
+tip.hidden = true; document.body.appendChild(tip);
+
+const hit = (e) => {
+  const r = lines.getBoundingClientRect();
+  return picker((e.clientX - r.left) * (W / r.width),
+                (e.clientY - r.top) * (H / r.height));
+};
+
+/** The leading plate and its share, for the tip. F encodes the mix in colour,
+ *  so the mix has to be readable in words too — colour is never the only
+ *  channel for anything. */
+function mixLine(parts) {
+  const sum = parts.reduce((a, b) => a + b, 0);
+  if (sum <= 0) return "";
+  let best = 0;
+  for (let i = 1; i < 4; i++) if (parts[i] > parts[best]) best = i;
+  return `${PLATE_LABEL[PLATES[best]]} ${(parts[best] / sum * 100).toFixed(0)}%`;
+}
+
+lines.style.pointerEvents = "auto";
+lines.addEventListener("pointermove", (e) => {
+  const i = hit(e);
+  if (i !== hov) { hov = i; drawLines(); }
+  if (i >= 0) {
+    const p = shapes[i].props;
+    const senate = view.mode === "national" && view.layer === "senate";
+    tip.innerHTML = senate
+      ? `<b>${p.state}</b> <span class="tip-amt">${
+          p.has_senate ? usdCompact(p.total_cents) : "no Senate seats"}</span>${
+          p.has_senate
+            ? `<span class="tip-flag">${mixLine(sectorParts(p.sectors))}</span>` : ""}${
+          p.has_senate && !p.seat_up
+            ? `<span class="tip-flag">Coarse screen — banked, no seat up in ${CYCLE}</span>` : ""}`
+      : `<b>${p.state}-${p.cd}</b> <span class="tip-amt">${usdCompact(p.pac_cents)}</span>${
+          `<span class="tip-flag">${mixLine(sectorParts(atlas.sectors[p.geoid]))}</span>`}${
+          p.map_status === "cd119_superseded"
+            ? `<span class="tip-flag">Coarse screen — superseded map</span>` : ""}`;
+    tip.style.left = `${e.clientX}px`; tip.style.top = `${e.clientY}px`;
+    tip.hidden = false;
+  } else tip.hidden = true;
+});
+lines.addEventListener("pointerleave", () => {
+  hov = -1; tip.hidden = true; drawLines();
+});
+lines.addEventListener("click", (e) => {
+  const i = hit(e);
+  if (i < 0) return;
+  const p = shapes[i].props;
+  // At national level, clicking a state on the Senate layer is the shortcut
+  // into that state's blow-up. The <select> stays the primary control,
+  // because a map you can only enter by clicking a 2px polygon is not
+  // reachable by keyboard.
+  if (view.mode === "national" && view.layer === "senate") {
+    if (p.has_senate) goTo({ mode: "state", st: p.state });
+    return;
+  }
+  sel = i; drawLines();
+  renderSheet(document.getElementById("sheet"), shapes[i], atlas.sectors,
+              sheetSys(), dark);
+});
+
+document.getElementById("theme").addEventListener("click", (e) => {
+  dark = !dark;
+  document.documentElement.dataset.theme = dark ? "dark" : "light";
+  e.target.setAttribute("aria-pressed", String(dark));
+  e.target.textContent = dark ? "Warm stock" : "Dark stock";
+  // The two stocks have different step tables, so the MESH changes, not
+  // just the ink uniforms — see stepTable().
+  const keep = sel;
+  layout();
+  sel = keep;
+  paint(); drawLines();
+  if (sel >= 0) {
+    renderSheet(document.getElementById("sheet"), shapes[sel], atlas.sectors,
+                sheetSys(), dark);
+  }
+});
+
+document.getElementById("layer").addEventListener("click", (e) => {
+  const senate = view.layer !== "senate";
+  e.target.setAttribute("aria-pressed", String(senate));
+  e.target.textContent = senate ? "House layer" : "Senate layer";
+  goTo({ layer: senate ? "senate" : "house" });
+});
+
+document.getElementById("motion").addEventListener("click", (e) => {
+  breathing = !breathing;
+  e.target.setAttribute("aria-pressed", String(breathing));
+  e.target.textContent = breathing ? "Press breathing" : "Plates held still";
+  press.setBreathing(breathing);
+});
+
+document.getElementById("tabletoggle").addEventListener("click", (e) => {
+  const t = document.getElementById("table");
+  t.hidden = !t.hidden;
+  e.target.setAttribute("aria-pressed", String(!t.hidden));
+  if (t.hidden) return;
+  if (view.mode === "national" && view.layer === "senate") {
+    renderSenateTable(t, atlas.states.features, atlas.senate);
+  } else {
+    const rows = (view.mode === "state"
+      ? districtsOf(atlas, view.st) : atlas.districts.features)
+      .map((f) => ({ props: f.properties }));
+    renderTable(t, rows, { cycle: CYCLE });
+  }
+});
+
+/* ------------------------------------------------------------------ */
+
+press = createPress(glc, { nPlates: 4, angles: ANGLES, onFrame: drawLines });
+window.__press = press;                       // the harness asserts the re-screen
+
+if (!press) {
+  document.getElementById("stage").innerHTML =
+    `<div class="nogl">No WebGL2 on this device. That is the honest failure
+     mode for this prototype and it is part of what is being weighed:
+     prototype A needs nothing but SVG and renders the same data
+     everywhere.</div>`;
+  // The fallback removes the stage, and with it #offmap and #statebar. Any
+  // control that re-runs layout() would then write innerHTML to null. A
+  // degraded page must degrade all the way rather than leave a live button
+  // over a hole — so disable everything that touches the map and leave the
+  // table, which still works.
+  for (const id of ["theme", "layer", "motion"]) {
+    const el = document.getElementById(id);
+    if (el) { el.disabled = true; el.title = "Needs WebGL2"; }
+  }
+  const pk = document.querySelector("#statepick");
+  if (pk) pk.disabled = true;
+  document.getElementById("perf").textContent = "WebGL2 unavailable";
+  renderLegend(document.getElementById("legend"), SYS, false, {
+    cycle: CYCLE, labels: atlas.meta.break_labels,
+  });
+  renderSheet(document.getElementById("sheet"), null, atlas.sectors, sheetSys(), false);
+} else {
+  layout();
+  drawLines();
+  renderSheet(document.getElementById("sheet"), null, atlas.sectors, sheetSys(), dark);
+  press.setBreathing(true);
+  press.press();
+  window.addEventListener("resize", debounce(() => { layout(); drawLines(); }, 160));
+  if (press.reducedMotion) {
+    const m = document.getElementById("motion");
+    m.disabled = true;
+    m.textContent = "Reduced motion — dot gain only";
+    m.title = "prefers-reduced-motion is on: no plate moves. The press cycle "
+            + "becomes a single dot-gain pulse.";
+  }
+  const t1 = performance.now();
+  document.getElementById("perf").textContent =
+    `data ${tLoad.toFixed(0)}ms · mesh ${mesh.count.toLocaleString()} verts · `
+  + `first paint ${(t1 - t0).toFixed(0)}ms`;
+}
+</script>
+</body>
+</html>
