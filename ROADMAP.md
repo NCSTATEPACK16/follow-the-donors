@@ -25,6 +25,13 @@ it — this repo has twice shipped a check that passed while testing nothing
 
 ## v1.1 — the direction from 2026-09-20
 
+> **Planned and ready to execute:**
+> `docs/superpowers/plans/2026-09-20-v1.1-legibility.md`. Two decisions were
+> taken after this section was written and the plan carries them: the party
+> layer is a **red/blue fill at four money steps** (measured — six does not
+> clear the gates, four does), and zoom is **three tiers**, nation → state →
+> district. Read the plan, not this section, to implement.
+
 Three notes from the user, in their order. Each has a measurement in front of
 it, because two of the three run straight at something round 2 already
 measured.
@@ -101,6 +108,14 @@ this exact table.
 
 So the overlay has to put party in a channel that **does not thin with the
 money**. Four ways, best first:
+
+**Resolved 2026-09-20.** Option 2 below was chosen in the form of a red/blue
+fill, and the wall was measured through rather than around: E's inks were
+constrained to iso-lightness *with a neutral plate* because E mixed party
+continuously. An incumbent party is categorical and never mixes, so chroma is
+free, and a search under the weaker constraint found **152 light and 76 dark
+ink pairs that clear both gates at four money steps** — and none at five or
+six. The adopted pair and its tables are in the plan.
 
 1. **Party in the keyline.** The fill stays the money ramp; the district's
    *boundary* is drawn in the incumbent's ink at full strength. A keyline is
