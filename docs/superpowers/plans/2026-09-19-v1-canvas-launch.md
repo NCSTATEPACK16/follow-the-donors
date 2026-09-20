@@ -512,6 +512,18 @@ it. The departure is recorded in `inks.ts`'s own header, which now says the
 light-end check is deliberately failed and at what value. The ink hues were
 not touched.
 
+**The same harness run also found that hover and click named different
+districts.** The picker encodes each district's index as an RGB colour in an
+offscreen canvas, and canvas path fills are antialiased — so a border pixel
+carries a blend of two neighbours' index colours that decodes to a third,
+unrelated district (OR-05 hovered, CA-46 selected). Fixed by checking the
+colour answer against the polygon. Underneath it was a second one: `click`
+truncates `clientX` to an integer and `pointermove` does not, so one cursor
+position arrived as two different floats and, on a border, two different
+districts; picking is now quantised to the pixel. Both are recorded in
+`atlas.ts`'s own header, and both are carried as harness checks — a grid
+sweep and a border walk — that fail on the pre-fix build.
+
 **And the reason the keyline argument was checkable at all is that the
 keylines were not being drawn.** The port dropped
 `#lines { position: absolute; inset: 0 }` from `d-threeplate.html`, so the two
