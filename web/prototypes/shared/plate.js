@@ -82,11 +82,28 @@ float plate(vec2 frag, float angle, float cellPx, float cov, vec2 drift, float g
   vec2 r = mat2(c, -s, s, c) * (frag + drift * uDpr);
   vec2 cell = fract(r / (cellPx * uCellScale * uDpr)) - 0.5;
   float d = length(cell);
-  // Dot AREA scales with coverage, so perceived tone tracks the number.
-  // 0.707 is the cell half-diagonal: at coverage 1.0 the dot closes the cell.
-  // 'gain' is the reduced-motion dot-gain pulse — a swell in radius with no
-  // spatial movement anywhere on the page.
-  float radius = sqrt(cov) * 0.707 * gain;
+  /* Dot AREA scales with coverage, so perceived tone tracks the number —
+     and getting that right means inverting the AREA, not the diagonal.
+
+     The cell here is one unit square, so a dot of radius r inks pi*r^2 of
+     it and the radius that inks cov is sqrt(cov/pi). The old line used
+     sqrt(cov)*0.707, the half-DIAGONAL, which is the radius at which a dot
+     covers the whole cell rather than the radius at which it covers cov.
+     Measured, that laid down pi/2 = 1.57x the ink asked for at the low end
+     and closed 99.2% of the cell at the 0.88 cap — so correction #5, the
+     cap that keeps the certainty screen alive on the richest districts,
+     was defeated inside the shader in both rounds. Every map read bulky
+     and nearly solid because it was.
+
+     Above cov = pi/4 the dot runs past the cell edges and the corners
+     start clipping, so the very top of the range under-inks slightly:
+     0.853 at the 0.88 cap rather than 0.88. That is the safe direction —
+     it leaves MORE paper, not less — and it is the only part of the range
+     where area and coverage are not equal.
+
+     'gain' is the reduced-motion dot-gain pulse — a swell in radius with no
+     spatial movement anywhere on the page. */
+  float radius = sqrt(cov / 3.14159265) * gain;
   float aa = length(vec2(dFdx(d), dFdy(d)));
   return 1.0 - smoothstep(radius - aa, radius + aa, d);
 }
