@@ -274,12 +274,53 @@ export function measure<P>(shapes: ProjectedShape<P>[]): ProjectedShape<P>[] {
 }
 
 /**
- * Hit-testing by colour picking.
+ * Hit-testing by colour picking, ARBITRATED BY THE GEOMETRY.
  *
  * Each district is filled into an offscreen canvas with its index encoded as
  * an RGB triple, so a hover is one getImageData of one pixel regardless of
- * how many polygons there are.
+ * how many polygons there are. That is the fast path and it is right in the
+ * interior of every district.
+ *
+ * It is wrong on every edge pixel, and wrong in the worst way. Canvas PATH
+ * fills are antialiased and there is no way to turn that off —
+ * `imageSmoothingEnabled` governs image scaling, not rasterisation — so a
+ * pixel on a shared border carries a blend of its two neighbours' index
+ * colours. That blend is a third, unrelated number: measured on the shipped
+ * build, the pixel one step off OR-05's border decoded to CA-46, so hovering
+ * Oregon and clicking selected California and printed California's money
+ * under Oregon's cursor. Sub-pixel, because `click` truncates clientX to an
+ * integer and `pointermove` does not, the tooltip and the click could even
+ * disagree with each other at what the reader sees as one place.
+ *
+ * So the colour answer is checked against the polygon before it is believed:
+ * even-odd point-in-polygon, matching the `fill("evenodd")` that drew it. If
+ * it fails, the geometry is asked directly. The scan only ever runs on an
+ * edge pixel, and it also fixes the other end of the same bug — a point just
+ * off the coast used to decode a blend-with-transparent into some district
+ * rather than into nothing.
+ *
+ * Inherited from `web/prototypes/shared/atlas.js`, which has the same defect;
+ * the prototypes are the record of what was judged and are left as they were.
  */
+
+/** Even-odd point-in-polygon over a shape's rings — the same rule the picker
+ *  canvas was filled with, so a hole reads as a hole. */
+function insideShape<P>(s: ProjectedShape<P>, x: number, y: number): boolean {
+  const bb = s.bbox
+  if (bb && (x < bb[0] || x > bb[2] || y < bb[1] || y > bb[3])) return false
+  let inside = false
+  for (const r of s.rings) {
+    const xy = r.xy
+    for (let i = 0, j = xy.length - 2; i < xy.length; j = i, i += 2) {
+      const yi = xy[i + 1], yj = xy[j + 1]
+      if ((yi > y) !== (yj > y)) {
+        const t = (y - yi) / (yj - yi)
+        if (x < xy[i] + t * (xy[j] - xy[i])) inside = !inside
+      }
+    }
+  }
+  return inside
+}
 export function makePicker<P>(shapes: ProjectedShape<P>[], width: number, height: number, dpr = 1) {
   const cv = document.createElement("canvas")
   cv.width = Math.round(width * dpr)
@@ -300,11 +341,26 @@ export function makePicker<P>(shapes: ProjectedShape<P>[], width: number, height
     ctx.fill("evenodd")
   })
   return (x: number, y: number): number => {
-    const px = Math.round(x * dpr), py = Math.round(y * dpr)
+    // Decide by PIXEL, never by the float that came in. `click` truncates
+    // clientX to an integer and `pointermove` does not, so one cursor
+    // position arrives as two different numbers — 183.7 to the tooltip, 183
+    // to the click — and on a border those are two different districts. The
+    // reader sees one place and must get one answer, so both are quantised
+    // to the pixel they fall in and every test below asks about its centre.
+    // (floor, not round: the pixel containing 183.7 is 183, not 184.)
+    const px = Math.floor(x * dpr), py = Math.floor(y * dpr)
     if (px < 0 || py < 0 || px >= cv.width || py >= cv.height) return -1
+    const qx = (px + 0.5) / dpr, qy = (py + 0.5) / dpr
     const d = ctx.getImageData(px, py, 1, 1).data
     const v = d[0] | (d[1] << 8) | (d[2] << 16)
-    return v === 0 ? -1 : v - 1
+    const i = v - 1
+    if (v !== 0 && i < shapes.length && insideShape(shapes[i], qx, qy)) return i
+    // An edge pixel: the decoded index is a blend and means nothing. The
+    // polygons are the truth, and only this rare case pays for the scan.
+    for (let j = 0; j < shapes.length; j++) {
+      if (insideShape(shapes[j], qx, qy)) return j
+    }
+    return -1
   }
 }
 

@@ -567,9 +567,16 @@ async function checkV1Features(browser, truth, zips) {
     const props = byGeoid.get(geoid);
     log(!!props, `app — click selects a real district and deep-links it (#${geoid})`);
     if (props) {
-      // The tooltip said STATE-CD; the sheet must say the same district.
-      log(sheet.eyebrow.startsWith(`${props.state} · District`),
-        `app — sheet names the district the tooltip named (${sheet.eyebrow})`);
+      // The tooltip said STATE-CD; the sheet must say the SAME district.
+      // This compared the sheet with the hash until 2026-09-20 — both sides
+      // of which come from the click — so it read as a pass while pointing
+      // at Oregon and selecting California. Compare against what the tooltip
+      // actually said, which is the only thing the reader saw.
+      const said = (hit.tip.match(/([A-Z]{2})-(\d+)/) ?? []).slice(1, 3);
+      log(said.length === 2 &&
+          sheet.eyebrow === `${said[0]} · District ${said[1]}`,
+        `app — sheet names the district the tooltip named (tooltip ${
+          said.join("-") || "?"}, sheet ${sheet.eyebrow})`);
       // And its money must be the artifact's, through the page's formatter.
       const want = await pg.evaluate((c) => window.__riso.usd(c), props.pac_cents);
       log(sheet.amount === want,
@@ -659,6 +666,99 @@ async function checkV1Features(browser, truth, zips) {
 }
 
 /* ------------------------------------------------------------------ */
+/*  9. What you point at is what you get                               */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Hover and click must name the same district — everywhere, and especially
+ * ON A BORDER.
+ *
+ * The picker encodes each district's index as a colour in an offscreen
+ * canvas. Canvas path fills are antialiased and cannot be told not to be, so
+ * a border pixel carries a BLEND of its two neighbours' index colours, and
+ * that blend decodes to a third, unrelated district. Worse, `click`
+ * truncates clientX to an integer while `pointermove` does not, so the
+ * tooltip and the click could disagree at what the reader sees as one place.
+ * Measured on the shipped build before the fix: tooltip OR-05, sheet CA-46.
+ *
+ * The grid sweep would have caught it only by luck; the border walk is the
+ * part that catches it on purpose. It steps one pixel at a time until the
+ * tooltip changes district, then tests the pixel on each side of that
+ * transition — which is exactly the pixel the colour buffer gets wrong.
+ */
+async function checkPicking(browser, truth) {
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+  const { pg } = await boot(ctx);
+  const byGeoid = new Map(truth.features.map((f) => [f.properties.geoid, f.properties]));
+  const box = await pg.locator("#lines").boundingBox();
+
+  const tipAt = async (x, y) => {
+    await pg.mouse.move(x, y);
+    await pg.waitForTimeout(35);
+    return pg.evaluate(() => {
+      const t = document.querySelector(".tip");
+      if (!t || t.hidden) return null;
+      const m = t.textContent.replace(/\s+/g, " ").trim().match(/([A-Z]{2})-(\d+)/);
+      return m ? `${m[1]}-${m[2]}` : null;
+    });
+  };
+  const clickAt = async (x, y) => {
+    await pg.mouse.click(x, y);
+    await pg.waitForFunction(() => !!document.querySelector(".sheet-eyebrow"),
+      null, { timeout: 15000 }).catch(() => {});
+    const geoid = await pg.evaluate(() => location.hash.replace(/^#/, ""));
+    const p = byGeoid.get(geoid);
+    return p ? `${p.state}-${String(Number(p.cd))}` : null;
+  };
+  const norm = (s) => s && s.replace(/-0*(\d)/, "-$1");
+
+  let tested = 0, bad = [];
+  for (let gy = 0.18; gy <= 0.82; gy += 0.16) {
+    for (let gx = 0.12; gx <= 0.88; gx += 0.11) {
+      const x = box.x + box.width * gx, y = box.y + box.height * gy;
+      const tip = await tipAt(x, y);
+      if (!tip) continue;
+      const got = await clickAt(x, y);
+      tested++;
+      if (norm(tip) !== norm(got)) bad.push(`${tip} hovered -> ${got} selected`);
+    }
+  }
+  log(tested > 10 && bad.length === 0,
+    `app — hover and click agree on ${tested} point(s) across the plate${
+      bad.length ? `\n        ${bad.slice(0, 4).join("\n        ")}` : ""}`);
+
+  // The border walk. Coarse steps to find a district change, then bisect to
+  // the pixel the change happens on — stepping 1px at a time was most of
+  // this harness's runtime and found the same borders.
+  let walked = 0, edgeBad = [];
+  const y = box.y + box.height * 0.42;
+  const x0 = box.x + box.width * 0.15, x1 = box.x + box.width * 0.85;
+  let prev = null, prevX = null;
+  for (let x = x0; x < x1 && walked < 6; x += 6) {
+    const tip = await tipAt(x, y);
+    if (prev && tip && tip !== prev) {
+      let lo = prevX, hi = x;
+      while (hi - lo > 1) {
+        const mid = (lo + hi) / 2;
+        ((await tipAt(mid, y)) === prev) ? lo = mid : hi = mid;
+      }
+      for (const [px, want] of [[lo, prev], [hi, await tipAt(hi, y)]]) {
+        if (!want) continue;
+        const got = await clickAt(px, y);
+        if (norm(want) !== norm(got)) edgeBad.push(`border: ${want} hovered -> ${got} selected`);
+      }
+      walked++;
+    }
+    if (tip) { prev = tip; prevX = x; }
+  }
+  log(walked > 0 && edgeBad.length === 0,
+    `app — hover and click agree on both sides of ${walked} border(s)${
+      edgeBad.length ? `\n        ${edgeBad.slice(0, 4).join("\n        ")}` : ""}`);
+
+  await ctx.close();
+}
+
+/* ------------------------------------------------------------------ */
 
 try {
   await stat(join(ROOT, "index.html"));
@@ -688,6 +788,8 @@ console.log("\n— the state blow-up —");
 await checkStateView(browser, truth, senate);
 console.log("\n— v1 features —");
 await checkV1Features(browser, truth, zips);
+console.log("\n— what you point at is what you get —");
+await checkPicking(browser, truth);
 
 if (!process.argv.includes("--keep")) await browser.close();
 server.close();
