@@ -386,7 +386,18 @@ the Senate figure, the re-screen **on the GPU uniform rather than on its own
 label**, that the press one-shot runs, that reduced motion moves nothing at the
 moment of entry, and that going back restores 436 districts plus five chips.
 
-## What round 2 does not decide
+## The verdict
+
+**D — Three-Plate**, chosen 2026-09-19. Money only: three plates, green →
+teal → navy, an extended tonal range and no second variable. E and F are not
+carried forward. §§12-13 are why, and they are the round's real finding: a
+bivariate riso map dims its second variable exactly where its first is
+smallest, so E could show tilt on a third of the districts and F could show
+its donor mix on none.
+
+D becomes tasks 4 and 5 of `docs/superpowers/plans/2026-09-18-v1-launch.md`.
+
+## What round 2 did not decide
 
 Whether a map may encode a second variable it can only show on a third of its
 districts, and whether F's unreadability disqualifies it or is simply the price

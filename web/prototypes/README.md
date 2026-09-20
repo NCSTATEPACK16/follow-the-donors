@@ -18,7 +18,7 @@ cd web/prototypes && python3 -m http.server 8777
 |---|---|
 | `index.html` | the chooser, with a difference matrix per round |
 | **round 2 — 2026 cycle, live candidates** | |
-| `d-threeplate.html` | D — money only, three plates, extended tonal range |
+| `d-threeplate.html` | D — money only, three plates, extended tonal range · **chosen** |
 | `e-tilt.html` | E — bivariate; lightness is money, hue is party tilt |
 | `f-sector.html` | F — four sector plates; the colour *is* the donor mix |
 | **round 1 — 2024 cycle, settled** | |
