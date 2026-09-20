@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react"
 import {
-  D, SCREEN_ANGLES, densityT, sequentialPlates, usdCompact,
+  D, SCREEN_ANGLES, densityT, sequentialPlates, usd, usdCompact,
 } from "./lib/inks"
 import {
   loadAtlas, makeProjection, projectAll, measure, makePicker,
@@ -88,6 +88,13 @@ export default function App() {
       atlas = await loadAtlas(CYCLE, { senate: true })
       if (cancelled || !atlas) return
       ;(window as unknown as { __atlas?: unknown }).__atlas = atlas
+      /* The verification surface web/check.mjs asserts against. The harness
+       * checks the re-screen against the GPU uniform and the state bar's
+       * money against the page's OWN formatter — comparing two spellings of
+       * a number proves nothing — so both have to be reachable from the
+       * built bundle, where a module URL no longer is. */
+      ;(window as unknown as { __riso?: unknown }).__riso =
+        { CELL, STATE_SCALE, usd, usdCompact }
       const tLoad = performance.now() - t0
 
       BREAKS = atlas.meta.breaks_cents
@@ -477,10 +484,10 @@ export default function App() {
         <div className="stage" id="stage" ref={stageRef}>
           <div className="stage-inner" ref={innerRef}>
             <canvas id="gl" ref={glRef} role="img" aria-label="" />
-            <canvas ref={linesRef} aria-hidden="true" />
+            <canvas id="lines" ref={linesRef} aria-hidden="true" />
           </div>
-          <div className="stage-note"><span ref={countlineRef} /></div>
-          <div className="offmap" ref={offmapRef} />
+          <div className="stage-note"><span id="countline" ref={countlineRef} /></div>
+          <div className="offmap" id="offmap" ref={offmapRef} />
         </div>
         <aside className="rail">
           <div ref={legendRef} />

@@ -17,6 +17,14 @@
 
 .stage-inner { position: relative; background: var(--paper); }
 .stage-inner canvas { display: block; width: 100%; height: auto; }
+/* The keyline canvas sits ON the plate, not after it. Without this the two
+   canvases stack vertically: the map draws with no district boundaries at
+   all and a ghost outline map appears below it, while every pointer target
+   — hover, tooltip, click-to-select — moves one full canvas height down the
+   page and nothing on the visible map responds. Dropped in the port from
+   d-threeplate.html, where the rule keyed off #lines; caught by
+   web/check.mjs's hover scan. */
+#lines { position: absolute; inset: 0; }
 #lines { position: absolute; inset: 0; }
 
 /* Only the paper tooth — the halftone IS the texture, and mottle on top of

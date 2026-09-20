@@ -204,8 +204,10 @@ export const C: System = {
 /**
  * D — THREE-PLATE. Money only, extended tonal range.
  *
- * ordinal PASS · surface #F5F3EE · pale end #88b8a0 at 2.01:1 · every
- * adjacent gap >= 0.06 · dark PASS (used reversed) · dim end at 2.03:1.
+ * ordinal: monotone PASS · every adjacent gap >= 0.06 PASS · LIGHT-END
+ * CONTRAST DELIBERATELY FAILED — surface #F5F3EE, pale end #a5c8b5 at
+ * 1.64:1 against a 2:1 gate (dark stock: #2a4338 at 1.67:1). See the
+ * coverage floor below; this is a departure taken on the record.
  *
  * SINGLE HUE IS DELIBERATELY FAILED — hue spread 73°, against a 40° gate.
  * That is D's whole thesis and it is a departure taken on the record: the
@@ -224,9 +226,39 @@ export const D: System = {
   platesDark: { first: "#3B895D", second: "#3F7D9A", third: "#3A518A" },
   // The composite coverage per money step. NOT linear: the steps are spaced
   // to be equal in PERCEIVED LIGHTNESS, which is the only spacing under
-  // which six quantile classes read as six.
-  table: [0.4625, 0.5943, 0.7048, 0.7983, 0.8386, 0.88],
-  tableDark: [0.4375, 0.5878, 0.6625, 0.7196, 0.8043, 0.88],
+  // which six quantile classes read as six. Derived — floor and ceiling are
+  // the only chosen numbers, and the four between them are solved for equal
+  // printed lightness on the plate mix each step actually uses.
+  //
+  // THE FLOOR IS 0.34, LOWERED FROM 0.4625 (light) / 0.4375 (dark).
+  //
+  // Round 2 raised it to clear the validator's 2:1 light-end contrast gate,
+  // which is written for a chart mark on a chart surface. A district is not
+  // a bare mark: it carries a keyline, which is the heaviest thing on the
+  // plate and is what answers "is this a district" — so the fill only has to
+  // carry ORDER among six classes, and that is the adjacent-ΔL gate, not the
+  // contrast one. Measured over the floor, on the shipped ink model:
+  //
+  //     floor   light-end vs paper   min adjacent ΔL (gate 0.06)
+  //     0.20         1.32:1                 0.086
+  //     0.34         1.64:1                 0.073
+  //     0.40         1.81:1                 0.068
+  //     0.4625       2.01:1                 0.061   <- what round 2 shipped
+  //
+  // The two ends are in direct conflict (COMPARISON.md §10: 2:1 is
+  // unreachable below c ≈ 0.53 against this paper whatever the ink), so this
+  // is a choice about which gate the map is judged by, not a bug to fix.
+  // 0.34 buys 20% more separation between the six money classes and is the
+  // floor E and F already use, which stops D being the outlier. It is not
+  // taken all the way to round 1's 0.20: at 1.32:1 the palest fill is a tint
+  // no one would call ink, and the certainty screen — the coarse dots that
+  // carry map vintage — stops being legible in it.
+  //
+  // Re-derive rather than retype if the floor moves again: the four middle
+  // coverages are a solved consequence of it, and a hand-edited table drifts
+  // away from the lightness spacing that is the whole point.
+  table: [0.34, 0.4919, 0.6345, 0.7561, 0.8205, 0.88],
+  tableDark: [0.34, 0.5033, 0.615, 0.6964, 0.793, 0.88],
   plateOrder: ["first", "second", "third"],
   split: (t: number, n = 3) => seqWeights(t, n),
 }

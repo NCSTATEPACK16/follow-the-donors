@@ -214,7 +214,7 @@ Numbering keeps the approved plan's slots. **08 is skipped deliberately**
 
 **Files:** `CLAUDE.md`, `docs/superpowers/plans/2026-09-19-riso-round-2.md`
 
-- [ ] **Step 1:** Re-measure, do not assume:
+- [x] **Step 1:** Re-measure, do not assume:
 
 ```bash
 .venv/bin/python -c "
@@ -226,11 +226,11 @@ for c in ('2024', '2026'):
 "
 ```
 
-- [ ] **Step 2:** Replace `+5.08%` with the measured value in both documents,
+- [x] **Step 2:** Replace `+5.08%` with the measured value in both documents,
       in the same voice the rest of `CLAUDE.md` uses: state the number, state
       that it was re-measured on 2026-09-19, and leave the reasoning intact.
       2024's `−0.72%` and `44.47%` are confirmed correct — do not touch them.
-- [ ] **Step 3:** Commit on its own. A documentation correction should not ride
+- [x] **Step 3:** Commit on its own. A documentation correction should not ride
       inside a feature commit.
 
 ---
@@ -266,7 +266,7 @@ Carry over, without re-deriving:
 - per-cycle quantile breaks in `meta.breaks_cents` — 2024 and 2026 do not share
   a distribution and a shared ramp stops encoding at the end that matters.
 
-- [ ] **Step 1: Write the failing tests** (`tests/test_artifacts.py`, over
+- [x] **Step 1: Write the failing tests** (`tests/test_artifacts.py`, over
       `_artifacts`, no database — follow `tests/test_aggregate.py` for the shape):
 
 ```python
@@ -290,13 +290,13 @@ def test_senate_state_fix_is_recorded_not_silent():
     from-state, the to-state, the cents and the reason."""
 ```
 
-- [ ] **Step 2: Write `_artifacts.py`** with those four behaviours as pure
+- [x] **Step 2: Write `_artifacts.py`** with those four behaviours as pure
       functions taking rows and returning data. No I/O in the helper.
-- [ ] **Step 3: Write `07_artifacts.py`** using `_report.Report` and
+- [x] **Step 3: Write `07_artifacts.py`** using `_report.Report` and
       `_db.connect`, following `06_aggregate.py`'s shape exactly: build both
       cycles in `_db.CYCLES`, write markdown, `return report.write()`,
       `sys.exit(main())`.
-- [ ] **Step 4: Acceptance checks** (every one must be verified failable —
+- [x] **Step 4: Acceptance checks** (every one must be verified failable —
       break it on purpose once, see it exit nonzero, put it back):
 
   1. `districts-{cycle}` has exactly **441** features.
@@ -317,9 +317,9 @@ def test_senate_state_fix_is_recorded_not_silent():
      non-empty, and 35 seats-up + 15 banked for 2026.
   9. Every ID in every artifact is a JSON **string**.
 
-- [ ] **Step 5:** `.venv/bin/python scripts/07_artifacts.py`, read
+- [x] **Step 5:** `.venv/bin/python scripts/07_artifacts.py`, read
       `reports/07_artifacts.md`, confirm every check passes.
-- [ ] **Step 6: Commit.**
+- [x] **Step 6: Commit.**
 
 ---
 
@@ -339,11 +339,11 @@ provenance, and the cycle's filing period.
 `cmte_name, tier, sector` per donor. Committee names are permitted; see
 invariant 1.
 
-- [ ] **Step 1:** Failing test — a page's sector dollars sum to its total, and
+- [x] **Step 1:** Failing test — a page's sector dollars sum to its total, and
       the top-PAC list sums to no more than the total.
-- [ ] **Step 2:** Build the pages. Top 10 committees per district, by dollars,
+- [x] **Step 2:** Build the pages. Top 10 committees per district, by dollars,
       ties broken by `cmte_id` so a rebuild is deterministic.
-- [ ] **Step 3: Acceptance checks:**
+- [x] **Step 3: Acceptance checks:**
   1. 441 pages per cycle, one per `district_geoid`, no extras.
   2. Per page, sector dollars sum to the page total **to the cent**.
   3. Summed across pages, the total equals stage 07's artifact **to the cent**.
@@ -351,7 +351,7 @@ invariant 1.
      absence of individual-level fields explicitly, so the check is real.
   5. Every page carries `map_status`, `map_vintage`, `legal_status`,
      `provenance_url`, `filing_period`.
-- [ ] **Step 4:** Run it, read the report, **commit.**
+- [x] **Step 4:** Run it, read the report, **commit.**
 
 ---
 
@@ -380,18 +380,18 @@ invariant 1.
   This is the one file that may be overwritten in place (1-hour cache); every
   other artifact is immutable.
 
-- [ ] **Step 1:** Failing tests — a ZIP that resolves both ways keeps both rows
+- [x] **Step 1:** Failing tests — a ZIP that resolves both ways keeps both rows
       and both `resolution` values; `generation.json` lists every artifact the
       frontend asks for.
-- [ ] **Step 2:** Build them.
-- [ ] **Step 3: Acceptance checks:**
+- [x] **Step 2:** Build them.
+- [x] **Step 3: Acceptance checks:**
   1. Every `district_geoid` in the search index exists in stage 07's artifact.
   2. No ZIP row is missing `resolution`.
   3. An exact and a prefix answer for the same ZIP are distinguishable in the
      artifact — assert on a ZIP known to have both.
   4. `generation.json` names every versioned artifact, and every named file
      exists on disk.
-- [ ] **Step 4:** Run, read the report, **commit.**
+- [x] **Step 4:** Run, read the report, **commit.**
 
 ---
 
@@ -403,17 +403,17 @@ invariant 1.
 
 **There is no app yet.** This is a scaffold, not a modification.
 
-- [ ] **Step 1:** `npm create vite@latest` → React + TypeScript, in `web/`.
+- [x] **Step 1:** `npm create vite@latest` → React + TypeScript, in `web/`.
       Add Vitest. **Do not install `maplibre-gl` or `pmtiles`.**
-- [ ] **Step 2:** Move `prototypes/vendor/{d3-geo,d3-array,earcut}.min.js`
+- [x] **Step 2:** Move `prototypes/vendor/{d3-geo,d3-array,earcut}.min.js`
       into the build as real dependencies (`d3-geo`, `d3-array`, `earcut` from
       npm, pinned), or keep them vendored — either is fine, but pin the version
       and record which.
-- [ ] **Step 3:** Copy `prototypes/fonts/` (192 KB, OFL, self-hosted, Latin
+- [x] **Step 3:** Copy `prototypes/fonts/` (192 KB, OFL, self-hosted, Latin
       subsets) and `prototypes/texture/` (36 KB) into `web/public/`.
       **Self-hosted, never a third-party font CDN** — nothing render-blocking
       may compete with the data fetch on cellular.
-- [ ] **Step 4:** Port `shared/inks.js` → `src/lib/inks.ts`, typed. Carry over
+- [x] **Step 4:** Port `shared/inks.js` → `src/lib/inks.ts`, typed. Carry over
       **verbatim**, with their comments, because each comment records a
       measurement:
       - the `D` system: plates, `platesDark`, `table`, `tableDark`, `plateOrder`
@@ -422,18 +422,18 @@ invariant 1.
         never typed.** COMPARISON.md §8: round 1 shipped a legend that showed a
         different map than the one it sat beside.
       - `COVERAGE_FLOOR`, `COVERAGE_CEIL`, `SCREEN_ANGLES`, `SECTOR_ORDER`
-- [ ] **Step 5:** Port `shared/base.css` → `src/styles/riso.css`.
-- [ ] **Step 6:** `src/lib/config.ts` — the versioned asset names.
+- [x] **Step 5:** Port `shared/base.css` → `src/styles/riso.css`.
+- [x] **Step 6:** `src/lib/config.ts` — the versioned asset names.
       **Must stay in lockstep with stage 10's `generation.json`.** A mismatch
       404s in production and nowhere else.
-- [ ] **Step 7:** Tests (`inks.test.ts`):
+- [x] **Step 7:** Tests (`inks.test.ts`):
   1. `derivedRamp(D, false)` returns the six tones the plates print, and every
      adjacent pair differs — a regression here means the legend has drifted
      from the map again.
   2. `splitInk` conserves paper: `Π(1 - c_i) === 1 - C` for several weight
      vectors, to 1e-9. This is "total ink is the money", asserted.
   3. `coverageAt` maps each of the six `t` values to its table entry.
-- [ ] **Step 8:** `npm test`, **commit.**
+- [x] **Step 8:** `npm test`, **commit.**
 
 ---
 
@@ -445,7 +445,7 @@ invariant 1.
 Port `d-threeplate.html` and its three shared modules. This is the prototype
 the user chose; **port it, do not redesign it.**
 
-- [ ] **Step 1:** `plate.ts` — the WebGL2 press. Carry the shader **exactly**,
+- [x] **Step 1:** `plate.ts` — the WebGL2 press. Carry the shader **exactly**,
       including:
       - `radius = sqrt(cov / 3.14159265)` — invariant 9. The previous
         half-diagonal form inked 1.57× and closed 99.2% of the cell at the cap.
@@ -455,25 +455,25 @@ the user chose; **port it, do not redesign it.**
         rather than the screen shearing inside a stationary plate.
       - the additive dark branch. **Kubelka-Munk has no dark mode** — this is a
         permanent two-model split, not a branch to unify later.
-- [ ] **Step 2:** `atlas.ts` — loading, Albers projection, `partitionProjectable`,
+- [x] **Step 2:** `atlas.ts` — loading, Albers projection, `partitionProjectable`,
       triangulation, picking, sheet, table, legend, off-map chips.
       **AS/GU/MP/PR/VI cannot be drawn on Albers USA**: each returns the full
       clip rectangle, paints over the map and poisons `fitExtent`. Probe with a
       *plain unfitted* projection, partition them out, render as chips, keep
       them in the table. National draws **436**; the other five are chips.
-- [ ] **Step 3:** `view.ts` — the cycle band, the Senate layer, the state
+- [x] **Step 3:** `view.ts` — the cycle band, the Senate layer, the state
       blow-up, the state picker, `CELL`/`STATE_SCALE`.
-- [ ] **Step 4:** Wire the app: national view, state blow-up, Senate toggle,
+- [x] **Step 4:** Wire the app: national view, state blow-up, Senate toggle,
       table view, theme toggle, motion toggle, district sheet.
       **The theme toggle must rebuild the mesh**, not just repaint — light and
       dark have different step tables.
-- [ ] **Step 5:** Add what the prototype does not have and v1 needs:
+- [x] **Step 5:** Add what the prototype does not have and v1 needs:
       - **search** (district, state, candidate) over stage 10's index;
       - **ZIP entry**, rendering `resolution` — an exact answer and a prefix
         answer must look different, per invariant 7;
       - deep links to a district;
       - the district sheet reading stage 09's page JSON.
-- [ ] **Step 6:** Move `prototypes/check.mjs` to `web/` and re-point it at the
+- [x] **Step 6:** Move `prototypes/check.mjs` to `web/` and re-point it at the
       built app. **Keep every check**, in particular:
       - WebGL2 forced on via `--use-gl=angle --use-angle=swiftshader
         --enable-unsafe-swiftshader`; without these the harness passes while
@@ -482,26 +482,43 @@ the user chose; **port it, do not redesign it.**
         `<select>` fires no `change` and the blow-up goes untested (§14);
       - reduced motion asserted on the **GL calls**, not on pixels;
       - the re-screen asserted against the **GPU uniform**, not its own label.
-- [ ] **Step 7:** **Render it and look at it.** The harness checks structure and
+- [x] **Step 7:** **Render it and look at it.** The harness checks structure and
       the validator checks colour; neither looks at the page. The 1.57× dot bug
       passed every automated check for two rounds and was found by looking.
       Check at 1440 px and ~400 px, light and dark.
-- [ ] **Step 8:** `npm test && node web/check.mjs`, **commit.**
+- [x] **Step 8:** `npm test && node web/check.mjs`, **commit.**
 
-### Known cosmetic item to settle here, not before
+### Known cosmetic item — SETTLED 2026-09-20
 
-D's coverage floor is **0.4625**, raised during round 2 to satisfy the
-validator's 2:1 pale-end contrast gate. That gate is written for chart marks on
-a chart surface; a district fill also carries a keyline, which is the heaviest
-mark on the plate and is what separates a low-money district from bare paper.
-The map consequently reads darker than it should and the six steps are harder
-to tell apart than they need to be.
+**The floor is 0.34, down from 0.4625 (light) / 0.4375 (dark).** Measured on
+the shipped ink model, the derivation first verified by reproducing the
+round-2 table to the digit from its own floor:
 
-Settle it in this task with the real design system: try the floor at its
-round-1 value, **re-derive the ramp** (it is derived, so this is one constant),
-re-run the ordinal validator, and record the pale-end contrast that results
-along with the reason it is acceptable. **Do not** re-solve the ink hues —
-those are validated and were chosen.
+| floor | light end vs paper | min adjacent ΔL (gate 0.06) |
+|---|---|---|
+| 0.20 | 1.32:1 | 0.086 |
+| **0.34** | **1.64:1** | **0.073** |
+| 0.40 | 1.81:1 | 0.068 |
+| 0.4625 | 2.01:1 | 0.061 ← what round 2 shipped |
+
+The 2:1 gate is written for a chart mark on a chart surface. A district is not
+a bare mark: it carries a keyline, which is the heaviest thing on the plate
+and is what answers "is this a district", so the fill only has to carry ORDER
+among six classes — the adjacent-ΔL gate, not the contrast one. 0.34 buys 20%
+more separation between the money classes and is the floor E and F already
+use. It is **not** taken to round 1's 0.20: at 1.32:1 the palest fill is a
+tint no one would call ink, and the certainty screen stops being legible in
+it. The departure is recorded in `inks.ts`'s own header, which now says the
+light-end check is deliberately failed and at what value. The ink hues were
+not touched.
+
+**And the reason the keyline argument was checkable at all is that the
+keylines were not being drawn.** The port dropped
+`#lines { position: absolute; inset: 0 }` from `d-threeplate.html`, so the two
+canvases stacked vertically: the map drew with no district boundaries, a ghost
+outline map appeared below it, and every pointer target — hover, tooltip,
+click-to-select — sat one canvas height down the page. Found by Step 6's
+harness on its first run, not by any of the screenshots taken before it.
 
 ---
 
@@ -511,12 +528,12 @@ those are validated and were chosen.
 
 `worker/` is **empty**. There is no existing Worker.
 
-- [ ] **Step 1:** A static-asset Worker in front of the R2 bucket.
-- [ ] **Step 2:** Cache headers, and they are not uniform:
+- [x] **Step 1:** A static-asset Worker in front of the R2 bucket.
+- [x] **Step 2:** Cache headers, and they are not uniform:
       - versioned artifacts → `public, immutable, max-age=31536000`
       - `generation.json` → `public, max-age=3600`
-- [ ] **Step 3:** No secrets in the Worker; no dynamic origin.
-- [ ] **Step 4:** **Commit.** Do not deploy — deploying is Phase 7.
+- [x] **Step 3:** No secrets in the Worker; no dynamic origin.
+- [x] **Step 4:** **Commit.** Do not deploy — deploying is Phase 7.
 
 ---
 
