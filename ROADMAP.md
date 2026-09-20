@@ -85,10 +85,15 @@ preserves the ratio across the blow-up — copy that pattern.
 
 The data is there. District artifacts already carry `rep_cents`, `dem_cents`,
 `oth_cents`. For *incumbency* specifically, `cn.CAND_ICI` is loaded and
-measured today: **419 of 441 districts have exactly one filed incumbent for
-2026** (REP 219 · DEM 211 · DFL 2 · OTH 1). The other 22 have none or several
-— redistricting puts incumbents in new seats — and must render as their own
-case, not silently as one party.
+measured today: **414 of 441 districts have exactly one filed incumbent for
+2026** (REP 208 · DEM 203 · DFL 2 · OTH 1), and 416 of 441 for 2024. The other
+27 have none (20) or several (7) — redistricting puts incumbents in new seats
+— and must render as their own case, not silently as one party.
+
+(An earlier draft of this line said 419. That was the count of groups in the
+candidate master, before joining to our own districts; joined, it is 414. The
+join is on `state_usps` + `cd`, and `cd` is `'00'` for an at-large seat on
+both sides — get that wrong and seven states lose their incumbent silently.)
 
 **The wall:** round 2 built this and measured it failing. Prototype E put
 party tilt in the hue and money in the lightness. REP↔DEM separation on the
@@ -109,13 +114,16 @@ this exact table.
 So the overlay has to put party in a channel that **does not thin with the
 money**. Four ways, best first:
 
-**Resolved 2026-09-20.** Option 2 below was chosen in the form of a red/blue
-fill, and the wall was measured through rather than around: E's inks were
-constrained to iso-lightness *with a neutral plate* because E mixed party
-continuously. An incumbent party is categorical and never mixes, so chroma is
-free, and a search under the weaker constraint found **152 light and 76 dark
-ink pairs that clear both gates at four money steps** — and none at five or
-six. The adopted pair and its tables are in the plan.
+**Resolved 2026-09-20 — and none of the four options below is what was
+built.** The user chose the red/blue *fill* they originally asked for, and the
+wall turned out to be passable: E's inks were constrained to iso-lightness
+*with a neutral plate* because E mixed party continuously. An incumbent party
+is categorical and never mixes, so the chroma cap does not apply. A search
+under that weaker constraint found **152 light and 76 dark ink pairs clearing
+both gates at four money steps** — and none at five or six. So the answer was
+not a different channel but a shorter money axis, which is the trade the user
+took. The four options below are kept as the record of what was considered.
+The adopted pair and both coverage tables are in the plan.
 
 1. **Party in the keyline.** The fill stays the money ramp; the district's
    *boundary* is drawn in the incumbent's ink at full strength. A keyline is
