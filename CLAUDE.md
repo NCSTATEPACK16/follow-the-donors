@@ -190,7 +190,9 @@ fail constantly and train us to ignore it):
    Recorded rather than normalised away.
 
 Only **2024 hard-gates.** `weball26` is a mid-cycle snapshot with partial
-filing periods and small denominators; measured, 2026 lands at **+5.08%**,
+filing periods and small denominators; measured, 2026 lands at **+5.16%**
+(re-measured 2026-09-19; a prior pass on this repo recorded +5.08%, which the
+database no longer reproduces and should not be trusted over this figure),
 which a 1.5% tolerance would fail on every run. 2026 computes the identical
 numbers into `reports/03_hygiene.md` and never fails the build until its own
 thresholds are measured and ratcheted. See `_db.GATE_CYCLES`.
