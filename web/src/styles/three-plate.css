@@ -1,0 +1,81 @@
+/* D — THREE-PLATE
+   Money only, extended tonal range, three drums.
+
+   Round 1's B proved the two-drum overprint. D asks what a THIRD
+   plate buys: green → teal → federal blue → deep navy, where the
+   deep end is three inks laid over each other rather than a picked
+   swatch. The ramp stays monotonic in OKLab lightness and the hue
+   rides along as a secondary channel — which is what makes it a
+   legitimate sequential ramp and not a rainbow.
+
+   Nothing encodes party or sector here. That is the control: D is
+   what the map looks like when the only question is how much.
+
+   Ported from web/prototypes/d-threeplate.html's inline <style>. */
+:root { --paper: #F5F3EE; }
+[data-theme="dark"] { --paper: #17171A; }
+
+.stage-inner { position: relative; background: var(--paper); }
+.stage-inner canvas { display: block; width: 100%; height: auto; }
+/* The keyline canvas sits ON the plate, not after it. Without this the two
+   canvases stack vertically: the map draws with no district boundaries at
+   all and a ghost outline map appears below it, while every pointer target
+   — hover, tooltip, click-to-select — moves one full canvas height down the
+   page and nothing on the visible map responds. Dropped in the port from
+   d-threeplate.html, where the rule keyed off #lines; caught by
+   web/check.mjs's hover scan. */
+#lines { position: absolute; inset: 0; }
+#lines { position: absolute; inset: 0; }
+
+/* Only the paper tooth — the halftone IS the texture, and mottle on top of
+   a dot screen reads as dirt rather than as print. */
+.stage-inner::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background-image: url("/texture/grain-128.png"); background-size: 128px;
+  mix-blend-mode: multiply; opacity: .30;
+}
+[data-theme="dark"] .stage-inner::after { mix-blend-mode: screen; opacity: .16; }
+
+.legend-chip { border: none; background: none !important; }
+.legend-chip canvas { width: 30px; height: 13px; display: block; }
+.lv-mark { border: 1px solid var(--rule); }
+.lv-current   { background: repeating-linear-gradient(90deg, var(--ink) 0 1px, transparent 1px 2px); }
+.lv-contested { background: repeating-linear-gradient(90deg, var(--ink) 0 2px, transparent 2px 5px); }
+.lv-stale     { background: repeating-linear-gradient(90deg, var(--ink) 0 3px, transparent 3px 9px); }
+.masthead h1 { font-size: clamp(42px, 8vw, 88px); }
+.nogl { padding: 30px; border: 2px solid var(--stale); color: var(--stale); font-size: 13px; }
+
+/* ---- v1 additions: search + ZIP finder, not in any prototype ------ */
+.finder {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 0 var(--gut); margin-top: 14px;
+}
+.finder-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.finder input[type="text"], .finder input[type="tel"] {
+  font: 400 13px/1 var(--sans); padding: 8px 10px;
+  background: transparent; color: var(--ink);
+  border: 1.5px solid var(--rule); min-width: 220px;
+}
+.finder input:focus-visible { outline: 2px solid var(--key); outline-offset: 1px; }
+.finder-results {
+  list-style: none; margin: 0; padding: 0;
+  border: 1px solid var(--rule); max-width: 480px;
+}
+.finder-results li { border-bottom: 1px solid var(--rule); }
+.finder-results li:last-child { border-bottom: none; }
+.finder-results button {
+  display: block; width: 100%; text-align: left; cursor: pointer;
+  font: 400 12.5px/1.4 var(--sans); padding: 7px 10px;
+  background: transparent; color: var(--ink); border: none;
+}
+.finder-results button:hover, .finder-results button:focus-visible {
+  background: color-mix(in oklab, var(--ink) 6%, transparent);
+}
+.finder-empty { font-size: 11.5px; color: var(--ink-3); margin: 0; }
+.finder-zip-row {
+  display: flex; gap: 8px; align-items: center;
+  font-size: 12px; color: var(--ink-2); padding: 4px 0;
+}
+.finder-zip-tag { font-size: 10.5px; padding: 1px 6px; border: 1px solid currentColor; }
+.finder-zip-tag.is-exact { color: var(--ink-2); }
+.finder-zip-tag.is-prefix { color: var(--stale); }

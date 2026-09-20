@@ -53,8 +53,8 @@ Computed = 24K + 24Z from pas2, memo-filtered, with the candidate resolved throu
 
 | cycle | computed | reported | aggregate difference | within 5% | role |
 |---|---|---|---|---|---|
-| 2024 | $511,985,172 | $515,128,914 | -0.61% | 547 / 1,242 (44.04%) | **gated** |
-| 2026 | $411,603,824 | $391,693,144 | +5.08% | 506 / 1,279 (39.56%) | report only |
+| 2024 | $509,441,379 | $513,154,260 | -0.72% | 543 / 1,221 (44.47%) | **gated** |
+| 2026 | $409,501,443 | $389,396,963 | +5.16% | 502 / 1,267 (39.62%) | report only |
 
 
 ## Named outliers
@@ -70,9 +70,9 @@ Carried as regression cases, asserted on membership and ratio rather than exact 
 | SCOTT, TIMOTHY E. (`S4SC00240`) | -$135,072 | $730,400 | -$865,472 |
 | CRUZ, RAFAEL EDWARD  TED (`S2TX00312`) | $444,911 | $1,268,020 | -$823,109 |
 | HARRIS, KAMALA (`P00009423`) | $818,886 | $154,412 | $664,474 |
-| BIDEN, JOSEPH R JR (`P80000722`) | $818,886 | $154,412 | $664,474 |
 | SINEMA, KYRSTEN (`S8AZ00197`) | $286,385 | $818,655 | -$532,270 |
 | BROWN, SAM (`S2NV00308`) | $613,707 | $1,131,536 | -$517,829 |
+| RAMASWAMY, VIVEK (`P40011082`) | -$470,028 | $13,750 | -$483,778 |
 
 
 ## Acceptance
@@ -81,7 +81,7 @@ Carried as regression cases, asserted on membership and ratio rather than exact 
 |---|---|---|
 | no independent expenditure in the contribution set | PASS | 0 rows of ('24A', '24E') |
 | no coordinated/communication cost in the contribution set | PASS | 0 rows of ('24C', '24F') |
-| 2024 aggregate tolerance | PASS | -0.61% (tolerance ±1.5%) |
-| 2024 coverage floor | PASS | 44.04% (floor 44.00%) |
+| 2024 aggregate tolerance | PASS | -0.72% (tolerance ±1.5%) |
+| 2024 coverage floor | PASS | 44.47% (floor 44.40%) |
 
 Result: **PASS**

@@ -27,8 +27,43 @@ OTHER_NON_RECEIPT_TYPES = ("24C", "24F")
 MEMO_EXCLUDED = "X"
 
 
+#: A candidate's own committees — principal (P) and other authorized (A).
+#: Only these resolve a contribution to a candidate. A joint fundraising
+#: committee links to every candidate it raises for (C00493783 links to 16 in
+#: 2024), and a leadership PAC to its sponsor; attributing a JFC's receipts to
+#: all of them multiplies the money, and to one of them invents a recipient.
+#: Both tiers are kept separate by invariant 8 anyway, and measured, no 24K or
+#: 24Z in pas2 is received by a committee outside P/A — so this costs nothing
+#: and closes the hole structurally.
+AUTHORIZED_DESIGNATIONS = ("P", "A")
+
+
 def _types(seq):
     return "(" + ", ".join(f"'{t}'" for t in seq) + ")"
+
+
+def candidate_link_sql(cycle):
+    """ccl reduced to exactly one candidate per recipient committee.
+
+    ccl is not unique on CMTE_ID: 190 committees in 2024 (262 in 2026) link to
+    more than one CAND_ID, so joining on CMTE_ID alone turned 9,972 pas2 rows
+    into two contributions each and double-counted $2,545,768 — manufacturing
+    SUB_ID collisions the bulk file does not have.
+
+    164 of those 190 are one person with two registrations (GRAYSON ran for
+    Senate in 2016 and again in 2024 on the same committee), so the most
+    recent registration is the candidacy receiving the money. FEC_ELECTION_YR
+    orders them and LINKAGE_ID breaks ties, because an arbitrary tiebreak
+    would move money between candidates from one rebuild to the next.
+    """
+    return f"""
+        SELECT CMTE_ID, CAND_ID FROM ccl
+        WHERE cycle = '{cycle}'
+          AND CMTE_DSGN IN {_types(AUTHORIZED_DESIGNATIONS)}
+        QUALIFY row_number() OVER (
+            PARTITION BY CMTE_ID
+            ORDER BY FEC_ELECTION_YR DESC, LINKAGE_ID DESC) = 1
+    """
 
 
 def build_contributions(con, cycle):
@@ -60,7 +95,7 @@ def build_contributions(con, cycle):
                p.txn_date      AS txn_date,
                p.SUB_ID        AS sub_id
         FROM pas2 p
-        JOIN (SELECT DISTINCT CMTE_ID, CAND_ID FROM ccl WHERE cycle = '{cycle}') c
+        JOIN ({candidate_link_sql(cycle)}) c
           ON c.CMTE_ID = p.OTHER_ID
         WHERE p.cycle = '{cycle}'
           AND p.TRANSACTION_TP IN {_types(CONTRIBUTION_TYPES)}

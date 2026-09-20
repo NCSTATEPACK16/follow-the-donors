@@ -1,0 +1,42 @@
+# Congressional map changes since the 119th Congress was seated.
+#
+# WHY THIS FILE EXISTS. Census cb_2025_us_cd119 draws the districts as they
+# stood in January 2025. Nine states have since redrawn and are voting on
+# different lines in 2026, and two more enacted maps that were then blocked.
+# Nothing Census publishes will tell us that, so — like reference/sectors.csv —
+# this is the pipeline's human-research artifact: committed, diffable, and
+# validated on load by scripts/_districts.py.
+#
+# WHAT THE COLUMNS MEAN.
+#   legal_status     Which map GOVERNS the 2026 election, never "is anyone
+#                    suing". Texas, Tennessee and Louisiana are all under
+#                    active challenge and all three are in_effect.
+#                      in_effect      the new map governs
+#                      blocked        enjoined; cd119 still governs
+#                      in_litigation  enacted, not yet operative
+#   provenance_kind  enacting_authority = the legislature's bill record, the
+#                    canvass, or the court order itself. documentary = a
+#                    secondary account. Only enacting_authority is good enough
+#                    to DRAW from; documentary is good enough to SAY that a
+#                    state redrew. Every row below is documentary today.
+#   geometry_source  The shapefile, once sourced. Empty means we know the map
+#                    moved and cannot draw it — scripts/_districts.py reports
+#                    that state as cd119_superseded, which is what the UI must
+#                    tell a visitor. It is NOT the same as cd119_current.
+#
+# Facts below were read from the cited article on 2026-09-18. Replacing each
+# provenance_url with the enacting authority's own record, and filling in
+# geometry_source, is the remaining Phase 3 work — tracked by
+# _districts.sourcing_gaps() and printed in reports/05_districts.md.
+state,vintage,enacted_date,legal_status,provenance_url,geometry_source,provenance_kind,notes
+TX,2025 mid-decade redraw,2025-08-29,in_effect,https://en.wikipedia.org/wiki/2025%E2%80%932026_United_States_redistricting,,documentary,Special-session bill. Struck down as a racial gerrymander 2025-11-18; SCOTUS stayed that ruling 2025-12-04 (6-3) so the map is used in 2026.
+MO,2025 mid-decade redraw,2025-09-28,blocked,https://en.wikipedia.org/wiki/2025%E2%80%932026_United_States_redistricting,,documentary,Missouri Supreme Court ordered the old map used; SCOTUS upheld 2026-09-10. cd119 is operative.
+NC,2025 mid-decade redraw,2025-10-22,in_effect,https://en.wikipedia.org/wiki/2025%E2%80%932026_United_States_redistricting,,documentary,Legislative bill; no gubernatorial signature required. Federal panel approved 2025-11-26.
+OH,2025 decennial re-adoption,2025-10-31,in_effect,https://en.wikipedia.org/wiki/2025%E2%80%932026_United_States_redistricting,,documentary,Unanimous Ohio Redistricting Commission vote; locked until 2032.
+CA,2025 Proposition 50,2025-11-04,in_effect,https://en.wikipedia.org/wiki/2025%E2%80%932026_United_States_redistricting,,documentary,Voter-approved ballot measure. Upheld January 2026; SCOTUS denied the appeal 2026-02-04.
+UT,2025 court-ordered remedial,2025-11-10,in_effect,https://en.wikipedia.org/wiki/2025%E2%80%932026_United_States_redistricting,,documentary,State district court ordered map.
+VA,2026 referendum redraw,2026-04-21,blocked,https://en.wikipedia.org/wiki/2025%E2%80%932026_United_States_redistricting,,documentary,Referendum struck down by the Virginia Supreme Court 2026-05-08; SCOTUS denied a stay 2026-05-15. cd119 is operative.
+FL,2026 mid-decade redraw,2026-05-04,in_effect,https://en.wikipedia.org/wiki/2025%E2%80%932026_United_States_redistricting,,documentary,Special-session bill.
+TN,2026 mid-decade redraw,2026-05-07,in_effect,https://en.wikipedia.org/wiki/2025%E2%80%932026_United_States_redistricting,,documentary,Signed by the governor. Challenge pending — the chief district judge declined to block it 2026-05-26.
+LA,2026 redraw,2026-05-29,in_effect,https://en.wikipedia.org/wiki/2025%E2%80%932026_United_States_redistricting,,documentary,Legislative bill; facing legal challenges but operative.
+AL,2026 court-ordered map,2026-06-02,in_effect,https://en.wikipedia.org/wiki/2025%E2%80%932026_United_States_redistricting,,documentary,SCOTUS emergency order (unsigned 6-3) removed the prior injunction.

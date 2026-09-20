@@ -27,10 +27,24 @@ pytestmark = pytest.mark.skipif(
 
 CYCLE = GATE_CYCLES[0]
 
-#: The ten largest unexplained gaps at the time of the Phase 0 spike,
-#: reproduced exactly by stage 03. A NEW name displacing one of these on a
-#: CLOSED cycle can only mean our logic changed, which is the regression this
-#: roster exists to catch.
+#: The ten largest unexplained gaps on a closed cycle. A NEW name displacing
+#: one of these can only mean our logic changed, which is the regression this
+#: roster exists to catch — and it did exactly that.
+#:
+#: Re-baselined 2026-09-18, when the ccl fan-out fix (see _hygiene.
+#: candidate_link_sql) changed two entries, and the roster is what caught it:
+#:
+#:   BIDEN (P80000722) LEFT. The 2024 committee is linked in ccl to both
+#:   BIDEN and HARRIS — it was redesignated when Harris replaced him — so the
+#:   old CMTE_ID-only join credited its receipts to BOTH, reporting an
+#:   identical $818,886 against each. Resolving to the most recent
+#:   registration gives the money to HARRIS alone, and Biden's own gap falls
+#:   out of the top fifteen. That duplicate pair was the visible symptom that
+#:   led to the fan-out being found at all.
+#:
+#:   RAMASWAMY (P40011082) ENTERED at tenth, -$470,028 computed against
+#:   $13,750 reported. Not new money — a closed cycle has none — but a gap
+#:   that was previously ranked below Biden's inflated one.
 NAMED_OUTLIERS = {
     "H0LA01087",  # SCALISE, STEVE
     "S2PA00661",  # MCCORMICK, DAVE
@@ -38,8 +52,8 @@ NAMED_OUTLIERS = {
     "H6CA22125",  # MCCARTHY, KEVIN
     "S4SC00240",  # SCOTT, TIMOTHY E.
     "S2TX00312",  # CRUZ, TED
-    "P80000722",  # BIDEN, JOSEPH R JR
     "P00009423",  # HARRIS, KAMALA
+    "P40011082",  # RAMASWAMY, VIVEK
     "S8AZ00197",  # SINEMA, KYRSTEN
     "S2NV00308",  # BROWN, SAM
 }

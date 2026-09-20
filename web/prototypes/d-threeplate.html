@@ -1,0 +1,529 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Three-Plate — riso prototype D</title>
+<link rel="stylesheet" href="./fonts.css">
+<link rel="stylesheet" href="./shared/base.css">
+<style>
+/* ==================================================================
+   D — THREE-PLATE
+   Money only, extended tonal range, three drums.
+
+   Round 1's B proved the two-drum overprint. D asks what a THIRD
+   plate buys: green → teal → federal blue → deep navy, where the
+   deep end is three inks laid over each other rather than a picked
+   swatch. The ramp stays monotonic in OKLab lightness and the hue
+   rides along as a secondary channel — which is what makes it a
+   legitimate sequential ramp and not a rainbow.
+
+   Nothing encodes party or sector here. That is the control: D is
+   what the map looks like when the only question is how much.
+   ================================================================== */
+:root { --paper: #F5F3EE; }
+[data-theme="dark"] { --paper: #17171A; }
+
+.stage-inner { position: relative; background: var(--paper); }
+.stage-inner canvas { display: block; width: 100%; height: auto; }
+#lines { position: absolute; inset: 0; }
+
+/* Only the paper tooth — the halftone IS the texture, and mottle on top of
+   a dot screen reads as dirt rather than as print. */
+.stage-inner::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background-image: url("./texture/grain-128.png"); background-size: 128px;
+  mix-blend-mode: multiply; opacity: .30;
+}
+[data-theme="dark"] .stage-inner::after { mix-blend-mode: screen; opacity: .16; }
+
+.legend-chip { border: none; background: none !important; }
+.legend-chip canvas { width: 30px; height: 13px; display: block; }
+.lv-mark { border: 1px solid var(--rule); }
+.lv-current   { background: repeating-linear-gradient(90deg, var(--ink) 0 1px, transparent 1px 2px); }
+.lv-contested { background: repeating-linear-gradient(90deg, var(--ink) 0 2px, transparent 2px 5px); }
+.lv-stale     { background: repeating-linear-gradient(90deg, var(--ink) 0 3px, transparent 3px 9px); }
+.masthead h1 { font-size: clamp(42px, 8vw, 88px); }
+.nogl { padding: 30px; border: 2px solid var(--stale); color: var(--stale); font-size: 13px; }
+</style>
+</head>
+<body>
+<a class="skip" href="#stage">Skip to the map</a>
+<div id="shell"></div>
+<div class="band" id="band" role="note"></div>
+<div class="controls">
+  <button class="ctl" id="theme" aria-pressed="false">Dark stock</button>
+  <button class="ctl" id="layer" aria-pressed="false">Senate layer</button>
+  <button class="ctl" id="tabletoggle" aria-pressed="false">Table view</button>
+  <button class="ctl" id="motion" aria-pressed="true">Press breathing</button>
+  <span id="picker"></span>
+  <span class="stage-note" id="perf"></span>
+</div>
+<div class="statebar" id="statebar" hidden></div>
+<div class="wrap">
+  <div class="stage" id="stage">
+    <div class="stage-inner" id="inner">
+      <canvas id="gl" role="img" aria-label=""></canvas>
+      <canvas id="lines" aria-hidden="true"></canvas>
+    </div>
+    <div class="stage-note"><span id="countline"></span></div>
+    <div class="offmap" id="offmap"></div>
+  </div>
+  <aside class="rail">
+    <div id="legend"></div>
+    <div class="sheet" id="sheet" aria-live="polite"></div>
+  </aside>
+</div>
+<div class="tablewrap" id="table" hidden></div>
+<div class="colophon">
+  <h2>Prototype D — Three-Plate</h2>
+  <p><strong>Thesis:</strong> money only, across three drums. The tonal range
+  is built the way a three-colour riso builds it — green inks up across the
+  bottom of the range, teal-blue lays on across the middle, navy across the
+  top — so the darkest districts are an <em>overprint</em> rather than a
+  swatch someone picked. Lightness carries the order on its own; the hue
+  travel is a second channel riding along, which is the difference between a
+  sequential ramp and a rainbow.</p>
+  <p><strong>What it does not encode:</strong> party, sector, anything but the
+  number. D is the control against which E and F are read.</p>
+  <p><strong>Zoom:</strong> a blow-up is a NEW PLATE, re-screened coarser
+  (3.6px cells nationally, 8px in a state), not a camera move over the same
+  one. The certainty ratios scale with it, so a superseded district stays
+  2.33&times; coarser than a current one at either size.</p>
+</div>
+
+<script src="./vendor/d3-array.min.js"></script>
+<script src="./vendor/d3-geo.min.js"></script>
+<script src="./vendor/earcut.min.js"></script>
+<script type="module">
+import { D, densityT, sequentialPlates, usdCompact, usd, SCREEN_ANGLES,
+         COVERAGE_FLOOR, COVERAGE_CEIL } from "./shared/inks.js";
+import { halftoneRect } from "./shared/screens.js";
+import { loadAtlas, makeProjection, projectAll, measure, makePicker,
+         partitionProjectable, renderOffmap, renderSheet, renderTable,
+         renderLegend, shellHTML, debounce } from "./shared/atlas.js";
+import { createPress, triangulatePlates, MAX_PLATES } from "./shared/plate.js";
+import { CELL, FLAT_CELL, NATIONAL_SCALE, STATE_SCALE, makeStateProjection,
+         districtsOf, stateIndex, quantileBreaks, renderCycleBand,
+         renderSenateLegend, renderSenateSheet, renderSenateTable,
+         renderStateBar, renderStatePicker } from "./shared/view.js";
+
+const SYS = D;
+const CYCLE = "2026";
+/* Three plates, three angles. GLOBAL — one angle per plate for the whole
+   sheet, never per district. Per-district angles are precisely what makes
+   two adjacent polygons vibrate against each other, which is the "clash
+   between districts" this round had to fix. 15/45/75 is the classic
+   three-colour separation and puts the rosette where it belongs. */
+const ANGLES = [SCREEN_ANGLES.color, SCREEN_ANGLES.key, SCREEN_ANGLES.second];
+
+let dark = false, shapes = [], picker = null, sel = -1, hov = -1;
+let W = 0, H = 0, atlas = null, offmap = [], press = null, mesh = null;
+let view = { mode: "national", st: null, layer: "house" };
+let breathing = true;
+
+const glc = document.getElementById("gl");
+const lines = document.getElementById("lines");
+const inner = document.getElementById("inner");
+
+const t0 = performance.now();
+atlas = await loadAtlas(CYCLE, { senate: true });
+window.__atlas = atlas;                       // the harness asserts against this
+const tLoad = performance.now() - t0;
+
+const BREAKS = atlas.meta.breaks_cents;
+const SEN_BREAKS = quantileBreaks(
+  atlas.states.features.filter((f) => f.properties.has_senate)
+    .map((f) => f.properties.total_cents));
+const SEN_LABELS = (() => {
+  const s = (c) => usdCompact(c);
+  return [`< ${s(SEN_BREAKS[0])}`,
+    ...SEN_BREAKS.slice(0, -1).map((b, i) => `${s(b)}–${s(SEN_BREAKS[i + 1])}`),
+    `> ${s(SEN_BREAKS.at(-1))}`];
+})();
+
+document.getElementById("shell").innerHTML = shellHTML({
+  kicker: `follow the donors · prototype D · ${CYCLE} cycle`,
+  title: "Three-Plate",
+  thesis: "Federal PAC money, printed on three drums. Dot size is the money; "
+        + "how coarse the screen is, is how sure we are the district is still "
+        + "shaped like that.",
+  meta: atlas.meta,
+});
+renderCycleBand(document.getElementById("band"), atlas.meta);
+renderStatePicker(document.getElementById("picker"), stateIndex(atlas),
+                  (st) => goTo({ mode: "state", st }));
+
+/**
+ * The money→coverage table for the stock currently on the press.
+ *
+ * Light and dark have DIFFERENT tables, not a scaled one: subtractive ink on
+ * paper and additive light on a dark ground reach their floors at different
+ * coverages, and each was solved against its own model. The mesh therefore
+ * has to be rebuilt when the stock changes, which is why the theme toggle
+ * runs layout() rather than only repainting.
+ */
+const stepTable = () => (dark ? SYS.tableDark : SYS.table);
+
+/* ------------------------------------------------------------------ */
+/*  Encoders — the ONLY thing that differs between D, E and F          */
+/* ------------------------------------------------------------------ */
+
+/** D: split the money sequentially across the three plates. */
+const encodeHouse = (scale) => (p) => ({
+  cov: sequentialPlates(densityT(p.pac_cents, BREAKS), 3, stepTable()),
+  cell: (CELL[p.map_status] ?? FLAT_CELL) * 1,
+});
+
+/**
+ * The Senate layer reuses the coarse screen for "banked", and that reuse is
+ * the point rather than a shortcut: one meaning across both layers —
+ * *this figure is not what it appears to be*. A superseded boundary and
+ * money held for an election that is not this one are different facts but
+ * the same warning, and one grammar to learn beats two.
+ *
+ * A state with no Senate representation gets NO PLATE AT ALL. Printing it as
+ * zero would put it alongside states that genuinely received nothing, and
+ * that is a different fact.
+ */
+const encodeSenate = () => (p) => ({
+  cov: p.has_senate
+    ? sequentialPlates(densityT(p.total_cents, SEN_BREAKS), 3, stepTable())
+    : [0, 0, 0],
+  cell: p.seat_up ? CELL.cd119_current : CELL.cd119_superseded,
+});
+
+/* ------------------------------------------------------------------ */
+
+function currentFeatures() {
+  if (view.mode === "state") return districtsOf(atlas, view.st);
+  if (view.layer === "senate") return atlas.states.features;
+  return atlas.districts.features;
+}
+
+function layout() {
+  const box = document.getElementById("stage").getBoundingClientRect();
+  W = Math.max(320, Math.round(box.width));
+  H = Math.round(W * 0.60);
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  press.resize(W, H, dpr);
+  lines.width = Math.round(W * dpr); lines.height = Math.round(H * dpr);
+  lines.style.width = `${W}px`; lines.style.height = `${H}px`;
+
+  const senate = view.mode === "national" && view.layer === "senate";
+  let feats, proj;
+
+  if (view.mode === "state") {
+    // A single state gets its OWN conic, not a fitted Albers USA — see
+    // makeStateProjection. This is also the only view in which the five
+    // territory delegations can be drawn at all.
+    feats = districtsOf(atlas, view.st);
+    proj = makeStateProjection(feats, W, H);
+    offmap = [];
+    press.setCellScale(STATE_SCALE);
+  } else {
+    const src = senate
+      ? { type: "FeatureCollection", features: atlas.states.features }
+      : atlas.districts;
+    const part = partitionProjectable(src);
+    feats = part.mapped.features;
+    offmap = senate ? [] : part.offmap;
+    proj = makeProjection(part.mapped, W, H);
+    press.setCellScale(NATIONAL_SCALE);
+  }
+
+  const encode = senate ? encodeSenate() : encodeHouse();
+  shapes = measure(projectAll({ type: "FeatureCollection", features: feats }, proj));
+  mesh = triangulatePlates(feats, proj, encode);
+  press.setMesh(mesh.data, mesh.count);
+  picker = makePicker(shapes, W, H, 1);
+  sel = -1; hov = -1;
+
+  glc.setAttribute("aria-label", senate
+    ? `Halftone map of PAC contributions to Senate candidates by state, ${CYCLE} cycle`
+    : view.mode === "state"
+      ? `Halftone map of PAC contributions by congressional district in ${view.st}, ${CYCLE} cycle`
+      : `Halftone map of PAC contributions by congressional district, ${CYCLE} cycle`);
+
+  paint();
+  renderOffmap(document.getElementById("offmap"), offmap, SYS, dark, (geoid) => {
+    const f = offmap.find((x) => x.properties.geoid === geoid);
+    renderSheet(document.getElementById("sheet"), { props: f.properties },
+                atlas.sectors, SYS, dark);
+  }, BREAKS);
+
+  renderStateBar(document.getElementById("statebar"), {
+    state: view.mode === "state" ? view.st : null,
+    districts: view.mode === "state" ? districtsOf(atlas, view.st) : [],
+    senate: view.mode === "state"
+      ? atlas.states.features.find((f) => f.properties.state === view.st)?.properties
+      : null,
+    cycle: CYCLE,
+  });
+  const back = document.getElementById("backtonational");
+  if (back) back.addEventListener("click", () => goTo({ mode: "national" }));
+
+  document.getElementById("countline").textContent = senate
+    ? `WebGL2 halftone · three plates · ${shapes.length} states`
+    : `WebGL2 halftone · three plates · Kubelka-Munk overprint · ${
+        shapes.length} districts`;
+  // The layer toggle only means something nationally. In a state blow-up the
+  // plan is explicit: House districts stay as the fill and Senate money gets
+  // its own plate in the margin — both, not either.
+  const lay = document.getElementById("layer");
+  lay.disabled = view.mode === "state";
+  lay.title = view.mode === "state"
+    ? "In a state view both layers are shown — House as the fill, Senate in the rail"
+    : "";
+}
+
+function paint() {
+  press.setPaper(dark ? SYS.paperDark : SYS.paper);
+  press.setDark(dark);
+  press.setInks(dark
+    ? [SYS.platesDark.first, SYS.platesDark.second, SYS.platesDark.third]
+    : [SYS.plates.first, SYS.plates.second, SYS.plates.third]);
+  press.draw();
+  paintLegend();
+}
+
+function drawLines() {
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const ctx = lines.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  const trace = (s) => {
+    ctx.beginPath();
+    for (const r of s.rings) {
+      ctx.moveTo(r.xy[0], r.xy[1]);
+      for (let k = 2; k < r.xy.length; k += 2) ctx.lineTo(r.xy[k], r.xy[k + 1]);
+      ctx.closePath();
+    }
+  };
+  // Registration is PERFECT. The keyline is one weight everywhere and stays
+  // the heaviest mark on the sheet; all the uncertainty is in the screen.
+  ctx.lineWidth = view.mode === "state" ? 1.1 : 0.75;
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = dark ? "rgba(237,237,230,.50)" : "rgba(27,27,24,.62)";
+  for (const s of shapes) { trace(s); ctx.stroke(); }
+  if (hov >= 0 && hov !== sel) {
+    ctx.lineWidth = 1.8; ctx.strokeStyle = dark ? "#EDEDE6" : "#1b1b18";
+    trace(shapes[hov]); ctx.stroke();
+  }
+  if (sel >= 0) {
+    ctx.lineWidth = 2.4; ctx.strokeStyle = dark ? "#EDEDE6" : "#1b1b18";
+    trace(shapes[sel]); ctx.stroke();
+  }
+}
+
+function paintLegend() {
+  const senate = view.mode === "national" && view.layer === "senate";
+  const el = document.getElementById("legend");
+  if (senate) {
+    renderSenateLegend(el, atlas.senate);
+    return;
+  }
+  renderLegend(el, SYS, dark, {
+    cycle: CYCLE,
+    labels: atlas.meta.break_labels,
+    staleLabel: "Superseded — printed coarse; a redraw is in effect and we cannot draw it",
+  });
+  // Real halftone swatches from the same three-plate path, so a reader
+  // compares like with like. A flat chip beside a dotted map is a lie about
+  // what they are looking at.
+  document.querySelectorAll(".legend-chip").forEach((chip, i) => {
+    const cv = document.createElement("canvas");
+    const w = 60, h = 26;
+    cv.width = w; cv.height = h;
+    const c = cv.getContext("2d");
+    c.fillStyle = dark ? SYS.paperDark : SYS.paper; c.fillRect(0, 0, w, h);
+    const cov = sequentialPlates(i / 5, 3);
+    const pl = dark
+      ? [SYS.platesDark.first, SYS.platesDark.second, SYS.platesDark.third]
+      : [SYS.plates.first, SYS.plates.second, SYS.plates.third];
+    // Additive in dark mode, matching the shader. A legend that composites
+    // differently from the map is a legend for a different map.
+    c.globalCompositeOperation = dark ? "lighter" : "source-over";
+    for (let k = 0; k < 3; k++) {
+      halftoneRect(c, 0, 0, w, h, pl[k], ANGLES[k], cov[k], 8.4);
+    }
+    c.globalCompositeOperation = "source-over";
+    chip.innerHTML = ""; chip.appendChild(cv);
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/*  The plate change                                                   */
+/* ------------------------------------------------------------------ */
+
+/**
+ * National and state are two separate renders with a transition between
+ * them — NOT a free zoom. A blow-up is a new plate, which is what riso does,
+ * and it sidesteps the MapLibre CustomLayerInterface + stencil-buffer risk
+ * entirely this round.
+ *
+ * The one-shot press cycle fires on ARRIVING somewhere new, so the plates
+ * are seen laying down in sequence. Under reduced motion `press()` becomes a
+ * single non-spatial dot-gain pulse instead — see plate.js.
+ */
+function goTo(next) {
+  view = { ...view, ...next };
+  if (next.mode === "national") view.st = null;
+  inner.classList.add("is-swapping");
+  const go = () => {
+    inner.classList.remove("is-swapping");
+    layout();
+    press.press();
+    drawLines();
+    renderSheet(document.getElementById("sheet"), null, atlas.sectors, SYS, dark);
+  };
+  if (press.reducedMotion) go();
+  else setTimeout(go, 180);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Interaction                                                        */
+/* ------------------------------------------------------------------ */
+
+const tip = Object.assign(document.createElement("div"), { className: "tip" });
+tip.hidden = true; document.body.appendChild(tip);
+
+const hit = (e) => {
+  const r = lines.getBoundingClientRect();
+  return picker((e.clientX - r.left) * (W / r.width),
+                (e.clientY - r.top) * (H / r.height));
+};
+
+lines.style.pointerEvents = "auto";
+lines.addEventListener("pointermove", (e) => {
+  const i = hit(e);
+  if (i !== hov) { hov = i; drawLines(); }
+  if (i >= 0) {
+    const p = shapes[i].props;
+    const senate = view.mode === "national" && view.layer === "senate";
+    tip.innerHTML = senate
+      ? `<b>${p.state}</b> <span class="tip-amt">${
+          p.has_senate ? usdCompact(p.total_cents) : "no Senate seats"}</span>${
+          p.has_senate && !p.seat_up
+            ? `<span class="tip-flag">Coarse screen — banked, no seat up in ${CYCLE}</span>` : ""}`
+      : `<b>${p.state}-${p.cd}</b> <span class="tip-amt">${usdCompact(p.pac_cents)}</span>${
+          p.map_status === "cd119_superseded"
+            ? `<span class="tip-flag">Coarse screen — superseded map</span>` : ""}`;
+    tip.style.left = `${e.clientX}px`; tip.style.top = `${e.clientY}px`;
+    tip.hidden = false;
+  } else tip.hidden = true;
+});
+lines.addEventListener("pointerleave", () => {
+  hov = -1; tip.hidden = true; drawLines();
+});
+lines.addEventListener("click", (e) => {
+  const i = hit(e);
+  if (i < 0) return;
+  const p = shapes[i].props;
+  // At national level, clicking a state on the Senate layer is the shortcut
+  // into that state's blow-up. The <select> stays the primary control,
+  // because a map you can only enter by clicking a 2px polygon is not
+  // reachable by keyboard.
+  if (view.mode === "national" && view.layer === "senate") {
+    if (p.has_senate) goTo({ mode: "state", st: p.state });
+    return;
+  }
+  sel = i; drawLines();
+  renderSheet(document.getElementById("sheet"), shapes[i], atlas.sectors, SYS, dark);
+});
+
+document.getElementById("theme").addEventListener("click", (e) => {
+  dark = !dark;
+  document.documentElement.dataset.theme = dark ? "dark" : "light";
+  e.target.setAttribute("aria-pressed", String(dark));
+  e.target.textContent = dark ? "Warm stock" : "Dark stock";
+  // The two stocks have different step tables, so the MESH changes, not
+  // just the ink uniforms. layout() rebuilds it and clears the selection,
+  // so the selection is carried across by hand.
+  const keep = sel;
+  layout();
+  sel = keep;
+  paint(); drawLines();
+  if (sel >= 0) {
+    renderSheet(document.getElementById("sheet"), shapes[sel], atlas.sectors, SYS, dark);
+  }
+});
+
+document.getElementById("layer").addEventListener("click", (e) => {
+  const senate = view.layer !== "senate";
+  e.target.setAttribute("aria-pressed", String(senate));
+  e.target.textContent = senate ? "House layer" : "Senate layer";
+  goTo({ layer: senate ? "senate" : "house" });
+});
+
+document.getElementById("motion").addEventListener("click", (e) => {
+  breathing = !breathing;
+  e.target.setAttribute("aria-pressed", String(breathing));
+  e.target.textContent = breathing ? "Press breathing" : "Plates held still";
+  press.setBreathing(breathing);
+});
+
+document.getElementById("tabletoggle").addEventListener("click", (e) => {
+  const t = document.getElementById("table");
+  t.hidden = !t.hidden;
+  e.target.setAttribute("aria-pressed", String(!t.hidden));
+  if (t.hidden) return;
+  if (view.mode === "national" && view.layer === "senate") {
+    renderSenateTable(t, atlas.states.features, atlas.senate);
+  } else {
+    const rows = (view.mode === "state"
+      ? districtsOf(atlas, view.st) : atlas.districts.features)
+      .map((f) => ({ props: f.properties }));
+    renderTable(t, rows, { cycle: CYCLE });
+  }
+});
+
+/* ------------------------------------------------------------------ */
+
+press = createPress(glc, { nPlates: 3, angles: ANGLES, onFrame: drawLines });
+window.__press = press;                       // the harness asserts the re-screen
+
+if (!press) {
+  document.getElementById("stage").innerHTML =
+    `<div class="nogl">No WebGL2 on this device. That is the honest failure
+     mode for this prototype and it is part of what is being weighed:
+     prototype A needs nothing but SVG and renders the same data
+     everywhere.</div>`;
+  // The fallback removes the stage, and with it #offmap and #statebar. Any
+  // control that re-runs layout() would then write innerHTML to null. A
+  // degraded page must degrade all the way rather than leave a live button
+  // over a hole — so disable everything that touches the map and leave the
+  // table, which still works.
+  for (const id of ["theme", "layer", "motion"]) {
+    const el = document.getElementById(id);
+    if (el) { el.disabled = true; el.title = "Needs WebGL2"; }
+  }
+  const pk = document.querySelector("#statepick");
+  if (pk) pk.disabled = true;
+  document.getElementById("perf").textContent = "WebGL2 unavailable";
+  renderLegend(document.getElementById("legend"), SYS, false, {
+    cycle: CYCLE, labels: atlas.meta.break_labels,
+  });
+  renderSheet(document.getElementById("sheet"), null, atlas.sectors, SYS, false);
+} else {
+  layout();
+  drawLines();
+  renderSheet(document.getElementById("sheet"), null, atlas.sectors, SYS, dark);
+  press.setBreathing(true);
+  press.press();
+  window.addEventListener("resize", debounce(() => { layout(); drawLines(); }, 160));
+  if (press.reducedMotion) {
+    const m = document.getElementById("motion");
+    m.disabled = true;
+    m.textContent = "Reduced motion — dot gain only";
+    m.title = "prefers-reduced-motion is on: no plate moves. The press cycle "
+            + "becomes a single dot-gain pulse.";
+  }
+  const t1 = performance.now();
+  document.getElementById("perf").textContent =
+    `data ${tLoad.toFixed(0)}ms · mesh ${mesh.count.toLocaleString()} verts · `
+  + `first paint ${(t1 - t0).toFixed(0)}ms`;
+}
+</script>
+</body>
+</html>

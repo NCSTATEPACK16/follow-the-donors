@@ -13,3 +13,7 @@ dist/
 # git treats a symlink as a file, so the directory patterns above miss these
 web/public/data
 web/public/tiles
+.DS_Store
+
+# Local Netlify folder
+.netlify

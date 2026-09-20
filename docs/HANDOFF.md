@@ -1,8 +1,9 @@
 # follow-the-donors — handoff
 
-Written 2026-09-16, end of Phase 0. Read this before touching anything.
-`CLAUDE.md` holds the rules; this holds the *reasoning*, which is the part that
-does not survive in code.
+Written 2026-09-16, end of Phase 0. Last updated 2026-09-18, end of Phase 3
+and stage 06 — the data is done and the plan for a launchable site is cut and
+written. Read this before touching anything. `CLAUDE.md` holds the rules; this
+holds the *reasoning*, which is the part that does not survive in code.
 
 ---
 
@@ -44,6 +45,8 @@ subsystem we would otherwise have inherited (see "What we are not building").
 | Summary-file layouts | `scripts/fec_layouts.py` (FEC publishes no header CSV for these) |
 | Deps | `requirements.txt`, pinned. venv at `.venv/` |
 | **Phase 1 + Phase 2** | **Complete 2026-09-17.** Spike 00c, stages 01b/02/03/04. See `docs/superpowers/specs/2026-09-17-phase-1-2-implementation.md` |
+| **Phase 3** | **Mechanism complete 2026-09-18.** `05_districts.py`, `reference/district_overrides.csv`, 7 acceptance checks. See `docs/superpowers/specs/2026-09-18-phase-3-districts.md` |
+| **Phase 4** | **Stage 06 complete 2026-09-18.** Base map, + the ccl fan-out fix. See `docs/superpowers/specs/2026-09-18-phase-4-aggregation.md` |
 | Repo | Public at `github.com/NCSTATEPACK16/follow-the-donors`, MIT, CI on push/PR |
 
 Local footprint 1.0 GB. **Nothing is deployed, nothing is pushed, no git
@@ -62,8 +65,14 @@ All from the 2024 cycle, in `reports/00_feasibility.md`:
   repeated "drop N where an A exists" filter would delete 16,098 rows /
   $36,836,573 — 27x more than exist. **It destroys data. Do not implement it.**
 - **Join through the recipient, not the donor's claim.** `pas2.OTHER_ID` ->
-  `ccl.CMTE_ID` -> `CAND_ID` reconciles at **-0.61%**; `pas2`'s own `CAND_ID`
+  `ccl.CMTE_ID` -> `CAND_ID` reconciles at **-0.72%**; `pas2`'s own `CAND_ID`
   column reconciles at **-6.79%**. 99.95% of rows resolve.
+- **But `ccl` is not unique on `CMTE_ID`.** 190 committees (2024) link to two
+  or more `CAND_ID`s, so joining on `CMTE_ID` alone double-counted $2,545,768
+  across 9,972 rows. Found in Phase 4 — the visible symptom was BIDEN and
+  HARRIS reporting an identical $818,886, their shared committee credited to
+  both. Fixed 2026-09-18; the aggregate moved -0.61% -> -0.72% (it had been
+  flattered by the duplicates) and coverage 44.04% -> 44.47%.
 - `24T` (earmark conduit) **does not occur in pas2 at all** — it is an
   individual-file phenomenon.
 - `ccl` contains only **22** leadership-PAC (`D`) links, so filtering on
@@ -85,7 +94,8 @@ A strict per-candidate tolerance would fail on every run and teach us to ignore
 the gate, so it is instead:
 
 1. aggregate tolerance <= 1.5%
-2. coverage floor: >= 45.2% of candidates within 5%, ratcheted
+2. coverage floor: >= 44.0% of candidates within 5%, ratcheted
+   (the plan's 45.2% is not reproducible — see CLAUDE.md)
 3. a named-outlier list carried as parametrized regression cases
 
 **Unresolved, deliberately:** SCALISE (`H0LA01087`) — principal committee shows
@@ -149,30 +159,117 @@ unlimited for **public** repos but 2,000 min/month for private — so repo
 visibility is quietly a cost decision. GitHub runners also have ~14 GB disk,
 which may be too tight for the individual-file path.
 
-## Next step
+## Next step — read this first
 
-Phases 1 and 2 are done: the reconciliation gate is real and failing-capable,
-and every committee is tiered and sector-classified. The full record, with
-decisions and findings, is in
-`docs/superpowers/specs/2026-09-17-phase-1-2-implementation.md`.
+**The plan is written and cut: `docs/superpowers/plans/2026-09-18-v1-launch.md`.**
+Execute it task by task. It is deliberately smaller than the approved plan's
+Phase 4, and the cuts are recorded in it with the measurement that justified
+each one — do not quietly re-add them.
 
-**Phase 3 — district geometry.** Still the genuine risk, but now a bounded
-one: spike 00c proved the mechanism works and produced a crosswalk at 100%
-ZCTA resolution. Two things it settled that change the plan:
+The data is done. Stages 01-06 all exit 0 and 79 tests pass. What remains for
+a launchable site is three stages, a design system, and the map:
 
-- **There is no CD119 block equivalency file.** Census's newest BAF is CD116
-  vintage (proved by deriving it: Texas has 36 districts there and 38 in
-  cb_2025_us_cd119). The crosswalk is a **spatial intersection** — an area
-  approximation, not population-weighted — and every row records that in its
-  `derivation` field. Do not quietly upgrade the claim.
-- **85.12% of real FEC ZIPs resolve.** ZCTAs do not exist for PO-box-only or
-  point ZIPs, and committees use PO boxes heavily. The UI's ZIP entry has to
-  answer for the other 15% as something other than "no data".
+| task | deliverable |
+|---|---|
+| 1 | `07_tiles.py` — district choropleth → PMTiles z0-7 |
+| 2 | `09_district_pages.py` — 441 JSON files |
+| 3 | `10_sidecars.py` — search, ZIP index, `generation.json` |
+| 4 | the riso design system (`web/src/lib/riso.ts`, `styles/riso.css`) |
+| 5 | the map wearing it |
 
-What remains for Phase 3 is sourcing the ten states that redrew maps in
-2025-26, each override carrying vintage, provenance and legal status. Every
-crosswalk row today is `cd119_base`. Adding a state is a data change, not a
-code change.
+### The visual thesis, so it does not get sanded off
+
+**Registration quality encodes certainty.** The hardest honesty problem in
+this project is that precision varies — 35.42% of 2024 district dollars sit
+on maps that are no longer the law, 14.63% of committee ZIPs resolve only to
+a three-digit prefix, and the crosswalk is area-weighted rather than
+population-weighted. Risograph's native language is imprecision made visible,
+so a crisply registered fill means exact and an off-register plate with open
+halftone means approximate. It is `geo_precision` from follow-the-ppp, in ink.
+
+This is the reason to use riso. If it becomes decoration — grain over
+everything, registration meaning nothing — it has failed and should be cut.
+
+### Ink values are validated, not chosen
+
+Classic risograph inks **fail** the accessibility checks. Measured with the
+dataviz skill's validator: Federal Blue reads gray (chroma 0.089), orange↔green
+separate by only ΔE 7.3 under protanopia, and two inks fall below 3:1 against
+the paper. The snapped, passing set is in the plan:
+
+- categorical `#2F4B9B · #FF48B0 · #1F7A4D · #C2410C · #7E5BB0` — all five
+  checks pass, worst CVD pair ΔE 8.7
+- sequential (one ink, light→dark) `#E8EDF7 #C3CFE8 #8FA3D1 #5C76B8 #2F4B9B
+  #1B2F6B` — monotonic in OKLab L (0.945 → 0.327)
+
+**Re-run `scripts/validate_palette.js` before changing any of them**, and run
+it again for `--mode dark`: dark mode is *selected* from the same ramps, never
+an automatic flip, because riso is a paper idiom and an inversion reads as mud.
+
+### Performance rules that constrain the aesthetic
+
+Inherited and non-negotiable: nothing competes with tile fetches on cellular.
+Grain is **one baked tiling PNG** at low opacity — never an SVG filter, never a
+per-frame canvas. Misregistration is a 1.5px offset on a duplicated layer in
+`multiply` — one composite, not a filter pass. True halftone on vector tiles is
+impractical and is not attempted; the map gets flat validated inks and the
+riso treatment lives in the chrome and the charts.
+
+### State of the repo
+
+- On `main` at `632aaba`, clean. Nothing pushed; `origin` exists
+  (`github.com/NCSTATEPACK16/follow-the-donors`) and pushing is the user's call.
+- `FEC_API_KEY` is registered and verified working (HTTP 200, 5,322 candidates
+  for 2024, ~54 pages). `01b_totals.py` has still never run — it is **optional
+  for v1**, because the itemized/unitemized band exists for individual money
+  and v1 shows none.
+- ~49 GB free after clearing `ppp-loan-map`'s regenerable `data/`, `tiles/` and
+  `web/dist` (28 GB). That project rebuilds from a 14.5 GB re-download; its
+  live site was unaffected and still serves from R2.
+- **No cloud write has happened.** Deploy is Phase 7 and needs explicit
+  approval, per the standing cost rule.
+
+## What Phase 3 settled
+
+- **39.23% of districts are stale, and the number is now rendered rather than
+  discovered.** 173 of 441 districts sit in the nine states voting on new
+  lines in 2026 whose geometry we do not hold. `map_status` separates
+  `cd119_superseded` (a redraw is in effect and we cannot draw it) from
+  `cd119_current` (no redraw happened). Collapsing those two — which is what
+  the spike's single `cd119_base` label did — states something false about two
+  districts in five.
+
+- **`legal_status` answers which map governs, not whether anyone is suing.**
+  This corrects the approved plan, which listed TN and LA as "in litigation"
+  and MO as "blocked". Measured against the record: TX, TN and LA are all
+  under active challenge and all three maps are **in effect** for 2026; MO and
+  VA were enacted and then struck down, so `cd119` is operative there. A
+  status that conflated the two would have drawn the wrong map for three
+  states.
+
+- **The 15% ZIP shortfall is closed to 0.24%.** The ZIP3 prefix fallback takes
+  answerable FEC committee ZIPs from 85.12% to **99.76%**. The prefix answer
+  names every district the ZIP's three-digit neighbourhood touches — wider
+  than the truth on purpose — and `resolution` records which kind of answer
+  each row is so the UI can never silently equate them.
+
+## What Phase 3 still owes
+
+Both lists are printed by `_districts.sourcing_gaps()` into
+`reports/05_districts.md` on every run, and neither fails the build: this is
+tracked work, not a defect, and a gate that fails on every run until fifty
+states are perfect is a gate nobody reads.
+
+1. **Geometry for nine states** — AL, CA, FL, LA, NC, OH, TN, TX, UT. Until
+   each arrives, those districts render as `cd119_superseded`. Adding one is a
+   data change: drop the shapefile in and name it in `geometry_source`.
+2. **Provenance for all eleven** is still `documentary` — the facts were read
+   from the Wikipedia 2025-26 redistricting article on 2026-09-18, which is
+   enough to *say* a state redrew and not enough to *draw* from. Ballotpedia
+   was tried first and is bot-blocked, so its pages could not be read and were
+   not cited. Replace each with the enacting legislature's bill record, the
+   canvass, or the court order, and flip `provenance_kind` to
+   `enacting_authority`.
 
 **Two loose ends carried forward, deliberately:**
 
