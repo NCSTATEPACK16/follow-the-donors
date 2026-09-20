@@ -5,17 +5,30 @@ congressional district. Sibling to [follow-the-ppp][ppp]: same architecture,
 different data.
 
 DuckDB does every expensive thing offline; the output is immutable static
-files on Cloudflare R2; a small Worker serves them; MapLibre draws them.
-**There is no database and no backend in production.**
+JSON and GeoJSON; the map is a risograph-style halftone drawn by a WebGL2
+shader on a canvas. **There is no database and no backend in production**, and
+no map library either — MapLibre, PMTiles and tippecanoe were all dropped when
+round 2 settled on discrete zoom (`docs/superpowers/plans/2026-09-19-v1-canvas-launch.md`).
 
 [ppp]: https://github.com/NCSTATEPACK16/follow-the-ppp
 
 ## Status
 
-Phase 1 (ingest and the reconciliation gate) is in progress. Nothing is
-deployed. See `docs/HANDOFF.md` for the reasoning behind the design and
-`CLAUDE.md` for the invariants — each one cites the measurement that produced
-it.
+**v1 is live at [follow-the-donors.netlify.app][live].** Stages 01–10 build the
+artifacts; the app renders 436 districts plus five unprojectable territory
+delegations, a Senate layer, per-state blow-ups, search, ZIP lookup and a
+per-district sheet.
+
+`ROADMAP.md` is what is left. `docs/HANDOFF.md` holds the reasoning behind the
+design and `CLAUDE.md` the invariants — each one cites the measurement that
+produced it.
+
+Verification is `pytest` (104), `npm test` in `web/` (5), and
+`node web/check.mjs` (80 browser checks against the built bundle, WebGL2
+forced on). The last of these is the one that matters: it found three picking
+bugs that every screenshot had passed over.
+
+[live]: https://follow-the-donors.netlify.app
 
 ## Pipeline
 
