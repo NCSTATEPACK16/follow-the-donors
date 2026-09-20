@@ -27,11 +27,6 @@ from _report import Report, fmt_int, fmt_money, fmt_pct
 
 ARTIFACTS = os.path.join(DATA, "artifacts")
 
-FILING_PERIOD = {
-    "2024": "2023-01-01 through 2024-12-31 (FEC bulk pas2, as filed)",
-    "2026": "2025-01-01 through the most recent FEC bulk pas2 refresh, as filed",
-}
-
 #: Only 2024 hard-gates; see _db.GATE_CYCLES. 2026 is a mid-cycle snapshot and
 #: reconciliation.relative is MEASURED and shipped with the data rather than
 #: written into the page as a constant that quietly goes stale.
@@ -226,7 +221,7 @@ def build_meta(con, cycle, features):
     meta = {
         "cycle": cycle_s,
         "gated": cycle_s in GATED,
-        "filing_period": FILING_PERIOD[cycle_s],
+        "filing_period": A.FILING_PERIOD[cycle_s],
         "breaks_cents": breaks,
         "break_labels": labels,
         "district_dollars": float(tot),

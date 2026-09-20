@@ -207,3 +207,72 @@ def test_senate_seat_up_versus_banked_is_a_state_mark():
     assert senate["states"]["BB"]["seat_up"] is False
     assert senate["seats_up"] == 1
     assert senate["banked_states"] == 1
+
+
+# --- sector folding (stage 09) --------------------------------------------
+
+def test_sectors_past_the_fifth_fold_into_other():
+    """A 6th sector is never a page row of its own — its dollars still count,
+    just not under its own name. SECTOR_ORDER is measured, not assumed."""
+    rows = [
+        ["Corporate", 500],
+        ["Trade Association", 300],
+        ["Leadership PAC", 200],
+        ["Labor", 100],
+        ["Membership", 50],
+        ["Ideological/Single-Issue", 40],
+        ["Health", 10],
+    ]
+    folded = _a.fold_sectors_to_top5(rows)
+    assert folded == [
+        ["Corporate", 500], ["Trade Association", 300],
+        ["Leadership PAC", 200], ["Labor", 100], ["Membership", 50],
+        ["Other", 50],
+    ]
+
+
+def test_folding_conserves_the_total():
+    rows = [["Corporate", 500], ["Unclassified", 40], ["Health", 10]]
+    folded = _a.fold_sectors_to_top5(rows)
+    assert sum(cents for _, cents in folded) == sum(cents for _, cents in rows)
+
+
+def test_folding_keeps_a_sector_that_nets_negative():
+    """A refund can exceed receipts in one sector of one district (measured:
+    district 5110, 2024, Unclassified nets -$17,620). Dropping it would break
+    the page-total-equals-sum-of-sectors acceptance check, so it is kept
+    rather than filtered out the way a purely-cosmetic display might."""
+    rows = [["Corporate", 500], ["Unclassified", -100]]
+    folded = _a.fold_sectors_to_top5(rows)
+    assert folded == [["Corporate", 500], ["Other", -100]]
+    assert sum(cents for _, cents in folded) == 400
+
+
+def test_folding_drops_a_top5_sector_with_zero_dollars_but_keeps_other():
+    """A district with fewer than five sectors should not print empty rows
+    for the sectors it has no money in."""
+    rows = [["Corporate", 100], ["Ideological/Single-Issue", 5]]
+    folded = _a.fold_sectors_to_top5(rows)
+    assert folded == [["Corporate", 100], ["Other", 5]]
+
+
+# --- top committees (stage 09) --------------------------------------------
+
+def test_top_committees_orders_by_dollars_ties_broken_by_cmte_id():
+    rows = [
+        ("C002", "Second Committee", "PAC", "Labor", decimal.Decimal("100.00")),
+        ("C001", "First Committee", "PAC", "Corporate", decimal.Decimal("500.00")),
+        ("C003", "Tied A", "PAC", "Labor", decimal.Decimal("100.00")),
+    ]
+    top = _a.top_committees(rows, limit=10)
+    assert [c["cmte_id"] for c in top] == ["C001", "C002", "C003"]
+    assert top[0]["cents"] == 50000
+    assert top[0]["cmte_name"] == "First Committee"
+
+
+def test_top_committees_is_limited():
+    rows = [(f"C{i:03d}", f"Committee {i}", "PAC", "Labor",
+              decimal.Decimal(str(i))) for i in range(20)]
+    top = _a.top_committees(rows, limit=10)
+    assert len(top) == 10
+    assert top[0]["cmte_id"] == "C019"

@@ -2,7 +2,7 @@
 
 Cycles: 2024, 2026
 Gated: 2024
-Elapsed: 8.7s
+Elapsed: 7.8s
 
 
 ## 2024
@@ -53,7 +53,7 @@ Senate: 50 states · $80,871,118 · 35 up / 15 banked · 1 correction(s).
 | 2026 district bucket of attribution equals the artifact total | PASS | 32878843600 vs 32878843600 |
 | 2026 Senate artifact equals candidate_totals to the cent | PASS | 8087111800 vs 8087111800 |
 | 2026 every feature carries map_status, map_vintage, legal_status | PASS | 0 features missing a vintage field |
-| 2026 map_status counts match district_vintage exactly | PASS | {'cd119_superseded': 173, 'cd119_contested': 19, 'cd119_current': 249} vs {'cd119_superseded': 173, 'cd119_current': 249, 'cd119_contested': 19} |
+| 2026 map_status counts match district_vintage exactly | PASS | {'cd119_superseded': 173, 'cd119_contested': 19, 'cd119_current': 249} vs {'cd119_superseded': 173, 'cd119_contested': 19, 'cd119_current': 249} |
 | 2026 every ring is wound for d3-geo (max area < 0.1 sr) | PASS | max 0.03721884756295505 sr over 497 features (1226 rings rewound) |
 | 2026 Senate states sum to 50 | PASS | 50 states |
 | 2026 DC->MD Senate correction is recorded, 35 seats up / 15 banked | PASS | 1 correction(s), 35 up / 15 banked |

@@ -11,6 +11,30 @@ database.
 import decimal
 import json
 
+#: Filing period text for each cycle, rendered on every published figure
+#: (invariant 5). Shared between stage 07 and stage 09 so the two cannot
+#: drift into describing the same cycle two different ways.
+FILING_PERIOD = {
+    "2024": "2023-01-01 through 2024-12-31 (FEC bulk pas2, as filed)",
+    "2026": "2025-01-01 through the most recent FEC bulk pas2 refresh, as filed",
+}
+
+#: Sector order is MEASURED, not assumed: the top five by 2024 district
+#: dollars ($142.9M Corporate, $75.6M Trade Association, $48.4M Leadership
+#: PAC, $45.7M Labor, $39.9M Membership). Mirrored from the constant of the
+#: same name in web/prototypes/shared/inks.js, which the frontend legend
+#: reads directly — nothing currently enforces that the two stay in sync, so
+#: a change here needs the same change there. A sector past the fifth folds
+#: into OTHER_LABEL; a sixth sector is never a generated hue or a page row.
+SECTOR_ORDER = [
+    "Corporate",
+    "Trade Association",
+    "Leadership PAC",
+    "Labor",
+    "Membership",
+]
+OTHER_LABEL = "Other"
+
 #: A one-element Python tuple repr's as ('REP',) and that trailing comma is a
 #: syntax error in SQL, so callers building a SQL IN-list use sql_list()
 #: rather than interpolating a repr.
@@ -303,6 +327,46 @@ def sector_breakdown(rows):
             continue
         by_district.setdefault(str(geoid), []).append([sector, cents])
     return by_district
+
+
+def fold_sectors_to_top5(sector_cents, sector_order=SECTOR_ORDER,
+                          other_label=OTHER_LABEL):
+    """[[sector, cents], ...] for one district, folded to SECTOR_ORDER.
+
+    A sector past the fifth is never a page row of its own — its cents are
+    summed into `other_label` instead of being dropped or listed unbounded.
+    Rows come back in `sector_order`, then `other_label` last, omitting any
+    sector that nets to exactly zero so a district with fewer than five
+    sectors does not print empty rows. A sector that nets NEGATIVE (refunds
+    exceeding receipts in that sector for that district — real, measured,
+    e.g. district 5110's Unclassified sector in 2024) is kept rather than
+    dropped: every cent must appear somewhere or the page total stops
+    matching the sum of its own rows, which is a release-blocking check.
+    """
+    known = {sector: 0 for sector in sector_order}
+    other = 0
+    for sector, cents in sector_cents:
+        if sector in known:
+            known[sector] += cents
+        else:
+            other += cents
+    out = [[sector, known[sector]] for sector in sector_order
+           if known[sector] != 0]
+    if other != 0:
+        out.append([other_label, other])
+    return out
+
+
+def top_committees(rows, limit=10):
+    """The top `limit` donor committees for a district, by dollars, ties
+    broken by cmte_id so a rebuild is deterministic. `rows` is
+    (cmte_id, cmte_name, tier, sector, dollars)."""
+    ranked = sorted(rows, key=lambda r: (-float(r[4]), r[0]))
+    return [
+        {"cmte_id": cmte_id, "cmte_name": cmte_name, "tier": tier,
+         "sector": sector, "cents": dollars_to_cents(dollars)}
+        for cmte_id, cmte_name, tier, sector, dollars in ranked[:limit]
+    ]
 
 
 def load_geojson(path):
