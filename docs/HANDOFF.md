@@ -5,6 +5,14 @@ and stage 06 — the data is done and the plan for a launchable site is cut and
 written. Read this before touching anything. `CLAUDE.md` holds the rules; this
 holds the *reasoning*, which is the part that does not survive in code.
 
+> **Status, 2026-09-24.** This file is the record of the data pipeline and
+> stops at 2026-09-18. Since then v1 shipped: it is merged to `main`, pushed
+> to `github.com/NCSTATEPACK16/follow-the-donors`, and live on Netlify. Where
+> a line below says "nothing pushed" or "no remote", it describes the repo on
+> the day it was written. **For what is left, read `ROADMAP.md`**, not the
+> "Next step" section here, whose v1 plan is finished. Figures below were
+> corrected on 2026-09-24 where this file disagreed with `CLAUDE.md`.
+
 ---
 
 ## The direction, in one paragraph
@@ -88,7 +96,8 @@ Computed PAC contributions per candidate, checked against FEC's own published
 makes the hygiene *checkable* rather than asserted, and it is the spine of the
 pipeline's correctness story.
 
-Aggregate reconciles to -0.61%. **Per-candidate does not**: median relative
+Aggregate reconciles to -0.72% (-0.61% before the 2026-09-18 ccl fan-out
+fix, which removed double-counted money). **Per-candidate does not**: median relative
 error 6.17%, p90 80%. The errors net out nationally and are large individually.
 A strict per-candidate tolerance would fail on every run and teach us to ignore
 the gate, so it is instead:
@@ -99,7 +108,7 @@ the gate, so it is instead:
 3. a named-outlier list carried as parametrized regression cases
 
 **Unresolved, deliberately:** SCALISE (`H0LA01087`) — principal committee shows
-$2.07M of 24K/24Z against weball's $187,000 on $14.7M total receipts. Recorded,
+$2.03M of 24K/24Z against weball's $187,000 on $14.7M total receipts. Recorded,
 not explained. Do not normalise it away to make a number look better; if you
 work it out, write down what it was.
 
@@ -159,9 +168,12 @@ unlimited for **public** repos but 2,000 min/month for private — so repo
 visibility is quietly a cost decision. GitHub runners also have ~14 GB disk,
 which may be too tight for the individual-file path.
 
-## Next step — read this first
+## Next step — superseded
 
-**The plan is written and cut: `docs/superpowers/plans/2026-09-18-v1-launch.md`.**
+**Done.** v1 shipped; the current list is `ROADMAP.md`. Kept below as the
+record of what v1 was cut to.
+
+**The plan was: `docs/superpowers/plans/2026-09-18-v1-launch.md`.**
 Execute it task by task. It is deliberately smaller than the approved plan's
 Phase 4, and the cuts are recorded in it with the measurement that justified
 each one — do not quietly re-add them.
@@ -273,10 +285,11 @@ states are perfect is a gate nobody reads.
 
 **Two loose ends carried forward, deliberately:**
 
-1. `FEC_API_KEY` is not registered. `01b_totals.py` skips cleanly without it,
-   so the pipeline runs end to end, but its live sweep is unvalidated and
-   `MIN_RECEIPTS_AGREEMENT` is a provisional 0.90. Register free at
-   api.data.gov, put it in `.env`, run the stage, ratchet the constant.
+1. `FEC_API_KEY` is registered and verified (see "State of the repo"), but
+   `01b_totals.py` has still never run, so its live sweep is unvalidated and
+   `MIN_RECEIPTS_AGREEMENT` is a provisional 0.90. Run the stage, ratchet the
+   constant. (This line said "not registered" until 2026-09-24 and
+   contradicted the section above it.)
 2. SCALISE (`H0LA01087`) is still unexplained. Carried as a regression case
    asserting the ratio stays above 5x, so a change that quietly normalises it
    fails loudly. If you work it out, write down what it was.
