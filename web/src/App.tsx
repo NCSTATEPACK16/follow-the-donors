@@ -66,6 +66,9 @@ export default function App() {
     let press: Press | null = null
     let atlas: Atlas | null = null
     let shapes: ProjectedShape<DistrictProperties>[] = []
+    /** State outlines for the national border pass. Empty in a state view
+     *  and on the Senate layer, where the fill already IS the states. */
+    let stateShapes: ProjectedShape<unknown>[] = []
     let picker: ((x: number, y: number) => number) | null = null
     let sel = -1, hov = -1
     let W = 0, H = 0
@@ -96,6 +99,7 @@ export default function App() {
       ;(window as unknown as { __riso?: unknown }).__riso =
         { CELL, STATE_SCALE, usd, usdCompact }
       const tLoad = performance.now() - t0
+      let firstPaintMs = -1
 
       BREAKS = atlas.meta.breaks_cents
       SEN_BREAKS = quantileBreaks(
@@ -105,8 +109,10 @@ export default function App() {
       el(shellRef).innerHTML = shellHTML({
         kicker: `follow the donors · ${CYCLE} cycle`,
         title: "Federal PAC Money by District",
-        thesis: "Federal PAC money, printed on three drums. Dot size is the "
-          + "money; how coarse the screen is, is how sure we are the "
+        // No ink names here: the shell is rendered once, and dark stock
+        // prints the same drums as umber/sage/ice rather than khaki/indigo.
+        thesis: "Federal PAC money, printed on three drums. Depth of ink is "
+          + "the money; how coarse the screen is, is how sure we are the "
           + "district is still shaped like that.",
         meta: atlas.meta,
       })
@@ -139,6 +145,7 @@ export default function App() {
         const senate = view.mode === "national" && view.layer === "senate"
         let feats: Atlas["districts"]["features"], proj: ReturnType<typeof makeProjection>
 
+        stateShapes = []
         if (view.mode === "state") {
           feats = districtsOf(atlas!, view.st!)
           proj = makeStateProjection(feats, W, H)
@@ -153,12 +160,23 @@ export default function App() {
           offmap = senate ? [] : part.offmap as never
           proj = makeProjection(part.mapped as never, W, H)
           press!.setCellScale(NATIONAL_SCALE)
+          // State outlines, projected with the SAME fitted projection as the
+          // districts. A separate fit would land them a fraction of a pixel
+          // off the district edges, and in this design system a gap between
+          // two shapes means misregistration, which MEANS something. The
+          // territories are partitioned out for the same reason as above:
+          // Albers USA returns its whole clip rectangle for them.
+          if (!senate && atlas!.states) {
+            stateShapes = projectAll(
+              partitionProjectable(atlas!.states as never).mapped as never, proj as never)
+          }
         }
 
         const encode = senate ? encodeSenate() : encodeHouse()
         shapes = measure(projectAll({ type: "FeatureCollection", features: feats } as never, proj as never)) as never
         mesh = triangulatePlates(feats as never, proj as never, encode as never)
         press!.setMesh(mesh.data, mesh.count)
+        ;(window as unknown as { __mesh?: unknown }).__mesh = mesh.data
         picker = makePicker(shapes, W, H, 1)
         sel = -1; hov = -1
 
@@ -189,6 +207,13 @@ export default function App() {
           ? `WebGL2 halftone · three plates · ${shapes.length} states`
           : `WebGL2 halftone · three plates · Kubelka-Munk overprint · ${shapes.length} districts`
 
+        // Written HERE, after the mesh this view actually draws exists. It
+        // used to be written once at boot, before a deep link's state
+        // blow-up had rebuilt the mesh, and read "mesh 0 verts".
+        if (firstPaintMs < 0) firstPaintMs = performance.now() - t0
+        el(perfRef).textContent =
+          `data ${tLoad.toFixed(0)}ms · mesh ${mesh.count.toLocaleString()} verts · first paint ${firstPaintMs.toFixed(0)}ms`
+
         const lay = el(layerBtnRef)
         lay.disabled = view.mode === "state"
         lay.title = view.mode === "state"
@@ -203,6 +228,7 @@ export default function App() {
           ? [SYS.platesDark!.first, SYS.platesDark!.second, SYS.platesDark!.third]
           : [SYS.plates!.first, SYS.plates!.second, SYS.plates!.third])
         press!.draw()
+        drawLines()
         paintLegend()
       }
 
@@ -219,10 +245,21 @@ export default function App() {
             ctx.closePath()
           }
         }
-        ctx.lineWidth = view.mode === "state" ? 1.1 : 0.75
+        // District hairline. Thinner nationally than before (0.75 -> 0.6)
+        // because the state pass below now carries the structure; at 0.75
+        // with no hierarchy the Northeast was a knot of equal lines.
+        ctx.lineWidth = view.mode === "state" ? 1.1 : 0.6
         ctx.lineJoin = "round"
-        ctx.strokeStyle = dark ? "rgba(237,237,230,.50)" : "rgba(27,27,24,.62)"
+        ctx.strokeStyle = dark ? "rgba(237,237,230,.46)" : "rgba(27,27,24,.56)"
         for (const s of shapes) { trace(s); ctx.stroke() }
+        // The country's structure before its 436 cells. Heavier, and in the
+        // paper's own ink rather than a sixth colour, so it reads as a fold
+        // in the sheet rather than as another plate.
+        if (stateShapes.length) {
+          ctx.lineWidth = 1.6
+          ctx.strokeStyle = dark ? "rgba(237,237,230,.80)" : "rgba(27,27,24,.84)"
+          for (const s of stateShapes) { trace(s as never); ctx.stroke() }
+        }
         if (hov >= 0 && hov !== sel) {
           ctx.lineWidth = 1.8; ctx.strokeStyle = dark ? "#EDEDE6" : "#1b1b18"
           trace(shapes[hov]); ctx.stroke()
@@ -248,12 +285,22 @@ export default function App() {
           cv.width = w; cv.height = h
           const c = cv.getContext("2d")!
           c.fillStyle = dark ? SYS.paperDark : SYS.paper; c.fillRect(0, 0, w, h)
-          const cov = sequentialPlates(i / 5, 3)
+          // The SAME coverages the map prints for this step — off the step
+          // table, at the current-map cell. This used to call
+          // sequentialPlates(i/5, 3) with no table (a linear 0.20 floor where
+          // the map's is 0.34) at the 8.4px superseded cell: a legend of a
+          // lighter, coarser map than the one beside it. The chip canvas is
+          // 2x its CSS box, so the cell is doubled to match the map's pixels.
+          const cov = sequentialPlates(i / 5, 3, stepTable())
           const pl = dark
             ? [SYS.platesDark!.first, SYS.platesDark!.second, SYS.platesDark!.third]
             : [SYS.plates!.first, SYS.plates!.second, SYS.plates!.third]
-          c.globalCompositeOperation = dark ? "lighter" : "source-over"
-          for (let k = 0; k < 3; k++) halftoneRect(c, 0, 0, w, h, pl[k], ANGLES[k], cov[k], 8.4)
+          // multiply on paper is the nearest canvas mode to the shader's
+          // subtractive overprint; lighter at 0.95 IS its additive dark model.
+          c.globalCompositeOperation = dark ? "lighter" : "multiply"
+          for (let k = 0; k < 3; k++) {
+            halftoneRect(c, 0, 0, w, h, pl[k], ANGLES[k], cov[k], CELL.cd119_current * 2, dark ? 0.95 : 1)
+          }
           c.globalCompositeOperation = "source-over"
           chip.innerHTML = ""; chip.appendChild(cv)
         })
@@ -412,8 +459,13 @@ export default function App() {
       cleanups.push(() => el(tableBtnRef).removeEventListener("click", onTableToggle))
 
       /* ---- boot the press -------------------------------------------- */
-      press = createPress(el(glRef), { nPlates: 3, angles: ANGLES, onFrame: drawLines })
+      // No onFrame keyline pass. It used to re-stroke all 436 rings on every
+      // animation frame while the press breathed, though the keylines never
+      // move; they live on their own canvas and are redrawn only when what
+      // they show changes (layout, hover, select, theme).
+      press = createPress(el(glRef), { nPlates: 3, angles: ANGLES })
       ;(window as unknown as { __press?: unknown }).__press = press
+      ;(window as unknown as { __redraw?: unknown }).__redraw = drawLines
 
       if (!press) {
         el(stageRef).innerHTML = `<div class="nogl">No WebGL2 on this device. That is the honest failure
@@ -449,9 +501,6 @@ export default function App() {
         m.textContent = "Reduced motion — dot gain only"
         m.title = "prefers-reduced-motion is on: no plate moves. The press cycle becomes a single dot-gain pulse."
       }
-      const t1 = performance.now()
-      el(perfRef).textContent =
-        `data ${tLoad.toFixed(0)}ms · mesh ${(mesh?.count ?? 0).toLocaleString()} verts · first paint ${(t1 - t0).toFixed(0)}ms`
     }
 
     void boot()
@@ -498,17 +547,24 @@ export default function App() {
       <div className="colophon">
         <h2>Federal PAC money by congressional district</h2>
         <p><strong>What this is:</strong> money only, across three drums. The
-          tonal range is built the way a three-colour riso builds it — green
-          inks up across the bottom of the range, teal-blue lays on across the
-          middle, navy across the top — so the darkest districts are an{" "}
-          <em>overprint</em> rather than a swatch someone picked.</p>
+          tonal range is built the way a three-colour riso builds it — khaki
+          inks up across the bottom of the range, teal lays on across the
+          middle, indigo across the top — so the darkest districts are an{" "}
+          <em>overprint</em> rather than a swatch someone picked. On dark stock
+          the same three drums print as light: umber, sage, ice blue.</p>
         <p><strong>What it does not encode:</strong> party or sector — a
           district's colour is its total PAC money and nothing else.</p>
         <p><strong>Zoom:</strong> a blow-up is a NEW PLATE, re-screened
-          coarser (3.6px cells nationally, 8px in a state), not a camera move
-          over the same one. The certainty ratios scale with it, so a
-          superseded district stays 2.33&times; coarser than a current one at
-          either size.</p>
+          coarser ({CELL.cd119_current.toFixed(1)}px cells nationally,{" "}
+          {(CELL.cd119_current * STATE_SCALE).toFixed(1)}px in a state), not a
+          camera move over the same one. The certainty ratios scale with it,
+          so a superseded district stays{" "}
+          {(CELL.cd119_superseded / CELL.cd119_current).toFixed(2)}&times;
+          coarser than a current one at either size.</p>
+        <p><strong>Motion:</strong> each district&rsquo;s plates drift a
+          fraction of a pixel out of register on their own clock, the way a
+          real press never quite holds registration. With reduced motion on,
+          nothing moves.</p>
         <p>PAC contributions only (FEC transaction types 24K and 24Z).
           Independent expenditures are not contributions and are never
           counted here. No individual contributor is ever named.</p>

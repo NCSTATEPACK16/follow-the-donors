@@ -32,7 +32,15 @@
  *
  * Per-district angles are exactly what makes two adjacent polygons vibrate
  * against each other. One angle per PLATE, the same angle everywhere on the
- * sheet. The keyline stays the heaviest mark and the districts stay still.
+ * sheet. The keyline stays the heaviest mark.
+ *
+ * REGISTRATION, ON THE OTHER HAND, IS PER-DISTRICT (2026-09-24). Until then
+ * one drift vector per plate moved the whole sheet as one piece. Now each
+ * district carries a phase, and its plates wander a fraction of a pixel off
+ * the global drift on that phase — each district settles like its own
+ * impression rather than the sheet sliding together. Only OFFSET varies per
+ * district, never angle or ruling, so it cannot make moiré (the interference
+ * between two screens depends on relative angle and ruling, not offset).
  *
  * Ported from web/prototypes/shared/plate.js — verbatim shader and motion
  * logic, typed for the app build.
@@ -40,33 +48,57 @@
 
 import earcut from "earcut"
 
-/* Per-vertex payload: x, y, cov0..cov3, cell. Four coverage slots always,
-   even for a three-plate page — an unused slot is a zero and costs one
-   multiply, where a per-prototype vertex format would cost a second shader. */
+/* Per-vertex payload: x, y, cov0..cov3, cell, phase. Four coverage slots
+   always, even for a three-plate page — an unused slot is a zero and costs
+   one multiply, where a per-prototype vertex format would cost a second
+   shader. `phase` is the district's own registration phase, 0..1. */
 export const MAX_PLATES = 4
-export const STRIDE_FLOATS = 2 + MAX_PLATES + 1   // 7
-export const STRIDE_BYTES = STRIDE_FLOATS * 4     // 28
+export const STRIDE_FLOATS = 2 + MAX_PLATES + 1 + 1   // 8
+export const STRIDE_BYTES = STRIDE_FLOATS * 4         // 32
 
 const VERT = `#version 300 es
-in vec2 aPos; in vec4 aCov; in float aCell;
+in vec2 aPos; in vec4 aCov; in float aCell; in float aPhase;
 uniform vec2 uRes;
-out vec4 vCov; out float vCell;
+out vec4 vCov; out float vCell; out float vPhase;
 void main() {
-  vCov = aCov; vCell = aCell;
+  vCov = aCov; vCell = aCell; vPhase = aPhase;
   vec2 c = (aPos / uRes) * 2.0 - 1.0;
   gl_Position = vec4(c.x, -c.y, 0.0, 1.0);
 }`
 
 const FRAG = `#version 300 es
 precision highp float;
-in vec4 vCov; in float vCell;
+in vec4 vCov; in float vCell; in float vPhase;
 uniform vec3 uPaper;
 uniform vec3 uInk[${MAX_PLATES}];
 uniform float uAng[${MAX_PLATES}];
 uniform vec2 uDrift[${MAX_PLATES}];
 uniform float uLay[${MAX_PLATES}];
 uniform float uDpr, uDark, uCellScale, uGain, uNPlates;
+uniform float uTime, uPhaseAmp;
 out vec4 outColor;
+
+/* This district's own wander for plate i, in CSS px.
+ *
+ * The phase has to modulate TIME. A phase that only picks a fixed offset
+ * (the v1.1 plan's first draft) gives every district a different resting
+ * place and then moves them all in unison with the global drift — the sheet
+ * still slides as one piece. Here each district runs its own clock.
+ *
+ * Periods differ per plate, so a district's three plates also breathe
+ * against EACH OTHER — which is the actual riso look: registration error
+ * between the drums, visible as colour fringing inside the keyline. The
+ * y phase is scaled by the golden ratio so x and y never lock together
+ * and the path is a slow Lissajous rather than a circle. At uPhaseAmp 0
+ * this is exactly zero, which is what reduced motion asks for. */
+vec2 wander(int i) {
+  float fi = float(i);
+  float ph = 6.2831853 * vPhase;
+  vec2 per = vec2(4.7 + fi * 1.3, 6.1 + fi * 0.9);
+  return uPhaseAmp * vec2(
+    sin(6.2831853 * uTime / per.x + ph),
+    cos(6.2831853 * uTime / per.y + ph * 1.618));
+}
 
 /* One halftone plate.
  *
@@ -143,14 +175,14 @@ void main() {
     col = uPaper;
     for (int i = 0; i < ${MAX_PLATES}; i++) {
       if (float(i) >= uNPlates) break;
-      float a = plate(frag, uAng[i], vCell, cov[i] * uLay[i], uDrift[i], uGain);
+      float a = plate(frag, uAng[i], vCell, cov[i] * uLay[i], uDrift[i] + wander(i), uGain);
       col += a * uInk[i] * 0.95;
     }
   } else {
     vec3 k = ks(uPaper);
     for (int i = 0; i < ${MAX_PLATES}; i++) {
       if (float(i) >= uNPlates) break;
-      float a = plate(frag, uAng[i], vCell, cov[i] * uLay[i], uDrift[i], uGain);
+      float a = plate(frag, uAng[i], vCell, cov[i] * uLay[i], uDrift[i] + wander(i), uGain);
       k += a * ks(uInk[i]) * 1.35;
     }
     col = unks(k);
@@ -200,6 +232,14 @@ function breathe(out: Float32Array, tSec: number, amount: number): Float32Array 
   return out
 }
 
+/**
+ * PER-DISTRICT WANDER, peak CSS px. Smaller than the global breath on
+ * purpose: the sheet still breathes as a press, and each district adds a
+ * finer, faster settle on top — about a third of a finer 2.5px cell, enough
+ * to read as ink moving and not as the map shaking. See wander() in FRAG.
+ */
+export const PHASE_AMP = 0.34
+
 const PRESS_STAGGER = 0.22   // seconds between plates laying down
 const PRESS_DUR = 0.62       // seconds for one plate to reach full ink
 const easeOut = (t: number): number => 1 - Math.pow(1 - t, 3)
@@ -232,7 +272,7 @@ export interface PressOptions {
   nPlates?: number
   /** One screen angle (degrees) per plate — GLOBAL, never per-district. */
   angles?: number[]
-  /** Optional callback after each draw, for the keyline pass. */
+  /** Optional callback after each draw. */
   onFrame?: () => void
 }
 
@@ -254,6 +294,10 @@ export interface Press {
    * screened at 3.6px is a lie the harness has to be able to catch. */
   readonly cellScale: number
   setBreathing(on: boolean): void
+  /** How far each district's plates may wander off the global drift, CSS
+   *  px. Zero whenever breathing is off or reduced motion is on — asserted
+   *  by web/check.mjs on the uPhaseAmp uniform itself. */
+  readonly phaseAmp: number
   press(): void
   stop(): void
 }
@@ -287,6 +331,7 @@ export function createPress(canvas: HTMLCanvasElement, opts: PressOptions = {}):
     res: U("uRes"), dpr: U("uDpr"), paper: U("uPaper"), dark: U("uDark"),
     cellScale: U("uCellScale"), gain: U("uGain"), n: U("uNPlates"),
     ink: U("uInk"), ang: U("uAng"), drift: U("uDrift"), lay: U("uLay"),
+    time: U("uTime"), phaseAmp: U("uPhaseAmp"),
   }
 
   const st = {
@@ -297,7 +342,7 @@ export function createPress(canvas: HTMLCanvasElement, opts: PressOptions = {}):
     drift: new Float32Array(MAX_PLATES * 2),
     lay: new Float32Array(MAX_PLATES).fill(1),
     paper: [1, 1, 1] as [number, number, number], dark: false,
-    cellScale: 1, gain: 1,
+    cellScale: 1, gain: 1, time: 0, phaseAmp: 0,
     mesh: null as Float32Array | null, count: 0,
     breathing: false, reduced: prefersReducedMotion(),
     pressT: -1, gainT: -1, raf: 0, t0: performance.now(),
@@ -344,12 +389,15 @@ export function createPress(canvas: HTMLCanvasElement, opts: PressOptions = {}):
     const aPos = gl.getAttribLocation(prog, "aPos")
     const aCov = gl.getAttribLocation(prog, "aCov")
     const aCell = gl.getAttribLocation(prog, "aCell")
+    const aPhase = gl.getAttribLocation(prog, "aPhase")
     gl.enableVertexAttribArray(aPos)
     gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, STRIDE_BYTES, 0)
     gl.enableVertexAttribArray(aCov)
     gl.vertexAttribPointer(aCov, 4, gl.FLOAT, false, STRIDE_BYTES, 8)
     gl.enableVertexAttribArray(aCell)
     gl.vertexAttribPointer(aCell, 1, gl.FLOAT, false, STRIDE_BYTES, 24)
+    gl.enableVertexAttribArray(aPhase)
+    gl.vertexAttribPointer(aPhase, 1, gl.FLOAT, false, STRIDE_BYTES, 28)
 
     gl.uniform2f(loc.res, st.w, st.h)
     gl.uniform1f(loc.dpr, st.dpr)
@@ -362,6 +410,8 @@ export function createPress(canvas: HTMLCanvasElement, opts: PressOptions = {}):
     gl.uniform1fv(loc.ang, st.angles)
     gl.uniform2fv(loc.drift, st.drift)
     gl.uniform1fv(loc.lay, st.lay)
+    gl.uniform1f(loc.time, st.time)
+    gl.uniform1f(loc.phaseAmp, st.phaseAmp)
     gl.drawArrays(gl.TRIANGLES, 0, st.count)
     if (opts.onFrame) opts.onFrame()
   }
@@ -390,8 +440,15 @@ export function createPress(canvas: HTMLCanvasElement, opts: PressOptions = {}):
       else { st.gain = 1 + (GAIN_PEAK - 1) * Math.sin(e * Math.PI); more = true }
     }
 
-    if (st.breathing && !st.reduced) { breathe(st.drift, t, 1); more = true }
-    else st.drift.fill(0)
+    if (st.breathing && !st.reduced) {
+      breathe(st.drift, t, 1)
+      // Wrapped so a tab left open for days keeps full float precision in
+      // the shader's sin(); 3600s is a common multiple of nothing, and the
+      // one-frame jump at the wrap is under the wander amplitude.
+      st.time = t % 3600
+      st.phaseAmp = PHASE_AMP
+      more = true
+    } else { st.drift.fill(0); st.phaseAmp = 0 }
 
     draw()
     return more
@@ -411,12 +468,13 @@ export function createPress(canvas: HTMLCanvasElement, opts: PressOptions = {}):
     get reducedMotion() { return st.reduced },
 
     get cellScale() { return st.cellScale },
+    get phaseAmp() { return st.phaseAmp },
     set reducedMotion(v: boolean) { st.reduced = !!v; if (!v) kick(); else draw() },
 
     /** Ambient breathing on/off. Ignored under reduced motion. */
     setBreathing(on: boolean) {
       st.breathing = !!on
-      if (on && !st.reduced) kick(); else { st.drift.fill(0); draw() }
+      if (on && !st.reduced) kick(); else { st.drift.fill(0); st.phaseAmp = 0; draw() }
     },
 
     /**
@@ -451,7 +509,7 @@ export type Projection = (coord: number[]) => [number, number] | null
 export type PlateEncoder = (props: Record<string, unknown>) => { cov: number[]; cell: number }
 
 /**
- * Triangulate into the 7-float interleaved format the press expects.
+ * Triangulate into the 8-float interleaved format the press expects.
  *
  * Done ONCE per layout, never per frame. Earcut-ing 441 gerrymandered
  * polygons on the main thread every frame would blow the mobile budget —
@@ -462,6 +520,26 @@ export type PlateEncoder = (props: Record<string, unknown>) => { cov: number[]; 
  * `encode(props)` returns { cov: [c0..cn], cell } — cov is the split across
  * plates and is the ONLY thing that differs between D, E and F.
  */
+/**
+ * A stable registration phase in [0,1) for one district.
+ *
+ * Hashed from the district's own identity (geoid, or the state for the
+ * Senate layer), never from its index: the index changes with every
+ * re-layout, theme change and state blow-up, and the whole map would
+ * reshuffle its motion each time. FNV-1a, because it is ten lines and
+ * scatters neighbouring geoids ("4801", "4802") far apart — a phase that
+ * tracked the geoid would make adjacent districts move as a visible wave.
+ */
+export function districtPhase(props: Record<string, unknown>, fallback: number): number {
+  const id = String(props.geoid ?? props.state ?? fallback)
+  let h = 2166136261
+  for (let k = 0; k < id.length; k++) {
+    h ^= id.charCodeAt(k)
+    h = Math.imul(h, 16777619)
+  }
+  return ((h >>> 0) % 10007) / 10007
+}
+
 export function triangulatePlates(
   features: GeoFeature[],
   projection: Projection,
@@ -471,6 +549,7 @@ export function triangulatePlates(
   const tris: number[] = []
   features.forEach((f, di) => {
     const { cov, cell } = encode(f.properties)
+    const phase = districtPhase(f.properties, di)
     const c0 = cov[0] || 0, c1 = cov[1] || 0, c2 = cov[2] || 0, c3 = cov[3] || 0
     const polys = f.geometry.type === "Polygon"
       ? [f.geometry.coordinates as number[][][]] : f.geometry.coordinates as number[][][][]
@@ -487,7 +566,7 @@ export function triangulatePlates(
       if (flat.length < 6) continue
       const idx = earcut(flat, holes.length ? holes : undefined, 2)
       for (const i of idx) {
-        verts.push(flat[i * 2], flat[i * 2 + 1], c0, c1, c2, c3, cell)
+        verts.push(flat[i * 2], flat[i * 2 + 1], c0, c1, c2, c3, cell, phase)
       }
       for (let k = 0; k < idx.length; k += 3) tris.push(di)
     }
