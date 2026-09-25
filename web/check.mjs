@@ -389,6 +389,202 @@ async function checkKeylines(browser) {
   await ctx.close();
 }
 
+/**
+ * Three zoom tiers, entered by double-click. Driven by REAL pointer input
+ * (a hover scan to find a district, then page.mouse.dblclick), because the
+ * point is that a reader's double-click on the plate descends — calling
+ * goTo from the harness would test nothing a reader does.
+ */
+async function findDistrictUnderPointer(pg) {
+  const box = await pg.locator("#lines").boundingBox();
+  for (let gy = 0.3; gy <= 0.75; gy += 0.05) {
+    for (let gx = 0.25; gx <= 0.8; gx += 0.05) {
+      const x = box.x + box.width * gx, y = box.y + box.height * gy;
+      await pg.mouse.move(x, y); await pg.waitForTimeout(30);
+      const t = await pg.evaluate(() => {
+        const e = document.querySelector(".tip");
+        return e && !e.hidden ? e.textContent.trim() : null;
+      });
+      if (t) return { x, y, t };
+    }
+  }
+  return null;
+}
+
+async function checkZoomTiers(browser) {
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const { pg, errs } = await boot(ctx);
+  const hit = await findDistrictUnderPointer(pg);
+  log(!!hit, `app — found a district to double-click${hit ? ` (${hit.t.split(" ")[0]})` : ""}`);
+  if (!hit) { await ctx.close(); return; }
+
+  await pg.mouse.dblclick(hit.x, hit.y);
+  await pg.waitForFunction(() => window.__view?.mode === "state", null, { timeout: 15000 }).catch(() => {});
+  const atState = await pg.evaluate(() => ({ ...(window.__view ?? { mode: "no __view" }), scale: window.__press.cellScale }));
+  log(atState.mode === "state", `app — double-click enters the state (mode ${atState.mode}, ${atState.st})`);
+
+  const hit2 = await findDistrictUnderPointer(pg);
+  if (hit2) {
+    await pg.mouse.dblclick(hit2.x, hit2.y);
+    await pg.waitForFunction(() => window.__view?.mode === "district", null, { timeout: 15000 }).catch(() => {});
+  }
+  const atDistrict = await pg.evaluate(() => ({
+    ...(window.__view ?? { mode: "no __view" }), scale: window.__press.cellScale, want: window.__riso.DISTRICT_SCALE ?? NaN,
+    drawn: Number((document.getElementById("countline").textContent.match(/(\d+) district/) ?? [])[1] ?? -1),
+    label: document.querySelector(".statebar-screen")?.textContent.replace(/\s+/g, " ") ?? "",
+    cellPx: window.__riso.CELL.cd119_current * window.__press.cellScale,
+    hash: location.hash,
+  }));
+  log(atDistrict.mode === "district",
+    `app — double-click again enters the district (mode ${atDistrict.mode}, ${atDistrict.geoid})`);
+  log(atDistrict.scale > atState.scale && Math.abs(atDistrict.scale - atDistrict.want) < 1e-9,
+    `app — the district plate is re-screened coarser again (${atState.scale.toFixed(2)} -> ${atDistrict.scale.toFixed(2)})`);
+  log(atDistrict.drawn === 1, `app — the district tier draws one district (${atDistrict.drawn})`);
+  const claimed = Number((atDistrict.label.match(/at ([\d.]+)px/) ?? [])[1] ?? -1);
+  log(claimed.toFixed(1) === atDistrict.cellPx.toFixed(1),
+    `app — district label says ${claimed}px, plate is at ${atDistrict.cellPx.toFixed(1)}px`);
+  log(atDistrict.hash === `#${atDistrict.geoid}`,
+    `app — the URL names the district entered (${atDistrict.hash})`);
+
+  if (atDistrict.mode !== "district") { await ctx.close(); return; }
+  // Back steps ONE tier, and keeps the district selected on the state plate.
+  await pg.click("#backtonational");
+  await pg.waitForFunction(() => window.__view?.mode === "state", null, { timeout: 15000 }).catch(() => {});
+  await pg.waitForTimeout(300);
+  const back = await pg.evaluate(() => ({
+    mode: window.__view.mode,
+    eyebrow: document.querySelector(".sheet-eyebrow")?.textContent.replace(/\s+/g, " ").trim() ?? "",
+  }));
+  log(back.mode === "state", `app — back goes district -> state, not straight to national (${back.mode})`);
+  log(back.eyebrow.includes(atDistrict.st),
+    `app — ...with the district still selected (${back.eyebrow || "empty sheet"})`);
+  await pg.click("#backtonational");
+  await pg.waitForFunction(() => window.__view?.mode === "national", null, { timeout: 15000 }).catch(() => {});
+  log(await pg.evaluate(() => window.__view.mode === "national"), "app — and back again reaches national");
+  log(errs.length === 0, `app — zoom tiers: clean console${errs.length ? `\n        ${errs.slice(0, 3).join("\n        ")}` : ""}`);
+  await ctx.close();
+}
+
+/**
+ * The party layer. Money is the map; party is a LAYER. What must hold:
+ * the legend changes with it, both parties get four steps, and no district
+ * without a single party incumbent is painted as a party — counted against
+ * the artifact, and asserted on the mesh the GPU actually draws: such a
+ * district's coverage must sit in the neutral slot and nowhere else.
+ */
+async function checkPartyLayer(browser, truth) {
+  const hasField = truth.features.some((f) => "incumbent_party" in f.properties);
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const { pg, errs } = await boot(ctx);
+  const hasButton = await pg.locator('button:has-text("Party layer")').count();
+  log(hasButton === 1, `app — there is a Party layer control (${hasButton})`);
+  if (!hasButton) { await ctx.close(); return; }
+  await pg.click('button:has-text("Party layer")');
+  await pg.waitForFunction(() => window.__view?.layer === "party", null, { timeout: 15000 }).catch(() => {});
+  await pg.waitForTimeout(400);
+
+  const legend = await pg.evaluate(() => document.querySelector(".legend-title")?.textContent.trim());
+  log(/seat|party/i.test(legend || ""), `app — the legend changes with the layer (${legend})`);
+  if (!hasField) {
+    log(true, "app — artifact predates incumbent_party: layer says so instead of drawing (skip the rest)");
+    await ctx.close();
+    return;
+  }
+  const chips = await pg.evaluate(() => ({
+    rep: document.querySelectorAll('.legend-chip[data-party="REP"]').length,
+    dem: document.querySelectorAll('.legend-chip[data-party="DEM"]').length,
+  }));
+  log(chips.rep === 4 && chips.dem === 4,
+    `app — four money steps per party, both parties shown (REP ${chips.rep}, DEM ${chips.dem})`);
+
+  const amb = truth.features.filter(
+    (f) => !["REP", "DEM"].includes(f.properties.incumbent_party)).length;
+  const shown = await pg.evaluate(() => window.__ambiguous ?? -1);
+  log(shown === amb, `app — ${amb} districts with no single party incumbent, app counts ${shown}`);
+
+  // On the GPU: per vertex [x, y, c0, c1, c2, c3, cell, phase]. A neutral
+  // district inks slot 2 only; a party district never inks slot 2.
+  const slots = await pg.evaluate(() => {
+    const d = window.__mesh; let neutralOnly = 0, partyInSlot2 = 0, n = 0;
+    for (let i = 0; i < d.length; i += 8) {
+      n++;
+      const [c0, c1, c2] = [d[i + 2], d[i + 3], d[i + 4]];
+      if (c2 > 0 && c0 === 0 && c1 === 0) neutralOnly++;
+      if (c2 > 0 && (c0 > 0 || c1 > 0)) partyInSlot2++;
+    }
+    return { neutralOnly, partyInSlot2, n };
+  });
+  log(slots.partyInSlot2 === 0 && slots.neutralOnly > 0,
+    `app — no vertex mixes a party ink with the neutral (${slots.partyInSlot2} mixed, ${slots.neutralOnly} neutral-only of ${slots.n})`);
+
+  const hit = await findDistrictUnderPointer(pg);
+  if (hit) {
+    await pg.mouse.click(hit.x, hit.y);
+    await pg.waitForSelector(".sheet-seat", { timeout: 8000 }).catch(() => {});
+    const seat = await pg.evaluate(() => document.querySelector(".sheet-seat")?.textContent.trim() ?? "");
+    log(seat.length > 0, `app — the district sheet says who holds the seat (${seat})`);
+  }
+
+  await pg.click('button:has-text("Party layer")');
+  await pg.waitForFunction(() => window.__view?.layer === "house", null, { timeout: 15000 }).catch(() => {});
+  log(await pg.evaluate(() => window.__view.layer === "house"), "app — the party layer toggles back off to the money map");
+  log(errs.length === 0, `app — party layer: clean console${errs.length ? `\n        ${errs.slice(0, 3).join("\n        ")}` : ""}`);
+  await ctx.close();
+}
+
+/** The layout: the map takes the first screen, the prose folds away, and
+ *  on a phone the district sheet is a bottom sheet over the map. */
+async function checkLayout(browser) {
+  for (const vp of [{ width: 1440, height: 900 }, { width: 1280, height: 720 }]) {
+    const ctx = await browser.newContext({ viewport: vp });
+    const { pg } = await boot(ctx);
+    const fill = await pg.evaluate(() => {
+      const r = document.querySelector("#stage canvas#gl").getBoundingClientRect();
+      return { top: r.top, bottom: r.bottom, h: r.height, vh: window.innerHeight };
+    });
+    log(fill.top < fill.vh * 0.45 && fill.h > fill.vh * 0.5 && fill.bottom <= fill.vh + 1,
+      `app · ${vp.width}x${vp.height} — the map is in the first screen (top ${Math.round(fill.top)}, ` +
+      `height ${Math.round(fill.h)} of ${fill.vh}, bottom ${Math.round(fill.bottom)})`);
+    await ctx.close();
+  }
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const { pg } = await boot(ctx);
+  const col = await pg.evaluate(() => {
+    const d = document.querySelector(".colophon");
+    return { tag: d?.tagName, open: d?.hasAttribute("open"), words: d?.textContent.length ?? 0 };
+  });
+  log(col.tag === "DETAILS" && !col.open && col.words > 800,
+    `app — the colophon is a closed disclosure with its text intact (${col.tag}, open=${col.open}, ${col.words} chars)`);
+  await ctx.close();
+
+  const m = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const mp = (await boot(m)).pg;
+  // Every lookup tolerates the element being absent, so a regression reads
+  // as a FAIL line here rather than a crash that hides every later check.
+  const before = await mp.evaluate(() => {
+    const w = document.querySelector(".sheetwrap");
+    return w ? getComputedStyle(w).display : "absent";
+  });
+  const hit = await findDistrictUnderPointer(mp);
+  if (hit) await mp.mouse.click(hit.x, hit.y);
+  await mp.waitForTimeout(500);
+  const open = await mp.evaluate(() => {
+    const w = document.querySelector(".sheetwrap");
+    if (!w) return { pos: "absent", state: "absent", bottom: -1, vh: window.innerHeight, h: -1 };
+    const r = w.getBoundingClientRect();
+    return { pos: getComputedStyle(w).position, state: w.dataset.state,
+             bottom: Math.round(r.bottom), vh: window.innerHeight, h: Math.round(r.height) };
+  });
+  log(before === "none" && open.pos === "fixed" && open.state === "open" &&
+      Math.abs(open.bottom - open.vh) <= 1 && open.h < open.vh * 0.6,
+    `app · 390px — the sheet is a bottom sheet: hidden until a pick (${before}), then ` +
+    `${open.pos} at the bottom, ${open.h}px of ${open.vh}`);
+  await mp.click(".sheet-handle", { timeout: 3000 }).catch(() => {});
+  const folded = await mp.evaluate(() => document.querySelector(".sheetwrap")?.dataset.state ?? "absent");
+  log(folded === "collapsed", `app · 390px — a tap on the handle folds it (${folded})`);
+  await m.close();
+}
+
 /* ------------------------------------------------------------------ */
 /*  7. The state blow-up                                               */
 /* ------------------------------------------------------------------ */
@@ -640,7 +836,10 @@ async function checkV1Features(browser, truth, zips) {
 
   if (hit) {
     await pg.mouse.click(hit.x, hit.y);
-    await pg.waitForSelector(".sheet .sheet-title", { timeout: 10000 }).catch(() => {});
+    // Wait for stage 09's page specifically. Since 2026-09-25 the sheet
+    // shows the geometry-sourced version at once and the page replaces it,
+    // so a wait on .sheet-title (both draw one) returned before the page.
+    await pg.waitForSelector('.sheet[data-source="page"] .sheet-title', { timeout: 10000 }).catch(() => {});
     await pg.waitForTimeout(600);
     const sheet = await pg.evaluate(() => ({
       eyebrow: document.querySelector(".sheet-eyebrow")?.textContent.replace(/\s+/g, " ").trim() ?? "",
@@ -787,8 +986,18 @@ async function checkPicking(browser, truth) {
       return m ? `${m[1]}-${m[2]}` : null;
     });
   };
+  // Two clicks a pixel apart within the OS double-click interval ARE a
+  // double-click, and since 2026-09-25 a double-click descends a zoom tier.
+  // The border walk clicks both sides of a border back to back, so without
+  // this gap its second click landed on a state plate it had just entered
+  // (measured: "UT-01 hovered -> UT-3 selected"). A reader who clicks twice
+  // that fast has double-clicked; the walk is testing single clicks.
+  let lastClick = 0;
   const clickAt = async (x, y) => {
+    const wait = 650 - (Date.now() - lastClick);
+    if (wait > 0) await pg.waitForTimeout(wait);
     await pg.mouse.click(x, y);
+    lastClick = Date.now();
     await pg.waitForFunction(() => !!document.querySelector(".sheet-eyebrow"),
       null, { timeout: 15000 }).catch(() => {});
     const geoid = await pg.evaluate(() => location.hash.replace(/^#/, ""));
@@ -869,6 +1078,12 @@ console.log("\n— the numbers —");
 await checkNumbers(browser, truth, senate);
 console.log("\n— motion —");
 await checkMotion(browser);
+console.log("\n— layout —");
+await checkLayout(browser);
+console.log("\n— zoom tiers —");
+await checkZoomTiers(browser);
+console.log("\n— the party layer —");
+await checkPartyLayer(browser, truth);
 console.log("\n— the keylines —");
 await checkKeylines(browser);
 console.log("\n— the state blow-up —");

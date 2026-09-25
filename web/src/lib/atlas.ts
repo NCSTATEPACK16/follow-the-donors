@@ -383,14 +383,34 @@ export function topSectors(sectors: Record<string, [string, number][]>, geoid: s
 }
 
 /** The district sheet. Same content in all three prototypes; only the ink differs. */
+/**
+ * Who holds the seat, in words — the party layer's sheet line. Every case is
+ * spelled out: "none" and "several" are facts about the seat, not gaps, and
+ * a blank would read as missing data. Returns "" for an artifact built
+ * before stage 07 carried the field, so an old deploy shows no false line.
+ */
+export function seatLine(incumbent: unknown): string {
+  const text: Record<string, string> = {
+    REP: "Seat held by a Republican",
+    DEM: "Seat held by a Democrat",
+    OTH: "Seat held by a third-party or independent member",
+    none: "No sitting member has filed for this seat",
+    several: "More than one sitting member has filed here — the lines moved",
+  }
+  const t = typeof incumbent === "string" ? text[incumbent] : undefined
+  return t ? `<div class="sheet-seat sheet-seat-${incumbent}">${t}</div>` : ""
+}
+
 export function renderSheet(
   el: HTMLElement, shape: { props: DistrictProperties } | null,
   sectors: Record<string, [string, number][]>, sys: System, dark: boolean,
 ) {
   if (!shape) {
+    el.dataset.source = "empty"
     el.innerHTML = `<p class="sheet-empty">Hover or tap a district.</p>`
     return
   }
+  el.dataset.source = "geometry"
   const p = shape.props
   const rows = topSectors(sectors, p.geoid)
   const total = rows.reduce((a, [, c]) => a + c, 0) || 1
@@ -409,6 +429,7 @@ export function renderSheet(
       <div class="sheet-sub">from ${p.donor_committees.toLocaleString()} political
         committees · ${p.contributions.toLocaleString()} contributions ·
         ${p.candidates} candidate${p.candidates === 1 ? "" : "s"}</div>
+      ${seatLine(p.incumbent_party)}
     </div>
     <div class="vintage ${stale ? "is-stale" : contested ? "is-contested" : "is-current"}">
       <span class="vintage-mark" aria-hidden="true"></span>

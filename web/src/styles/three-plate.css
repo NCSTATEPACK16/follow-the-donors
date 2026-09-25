@@ -42,7 +42,11 @@
 .lv-current   { background: repeating-linear-gradient(90deg, var(--ink) 0 1px, transparent 1px 2px); }
 .lv-contested { background: repeating-linear-gradient(90deg, var(--ink) 0 2px, transparent 2px 5px); }
 .lv-stale     { background: repeating-linear-gradient(90deg, var(--ink) 0 3px, transparent 3px 9px); }
-.masthead h1 { font-size: clamp(42px, 8vw, 88px); }
+/* The masthead is compact so the plate starts in the first screen. It was
+   up to 88px of headline and pushed the map below the fold on a laptop. */
+.masthead { padding-top: clamp(14px, 2vw, 22px); padding-bottom: 12px; }
+.masthead h1 { font-size: clamp(32px, 4.6vw, 60px); }
+.masthead .thesis { font-size: 13px; }
 .nogl { padding: 30px; border: 2px solid var(--stale); color: var(--stale); font-size: 13px; }
 
 /* ---- v1 additions: search + ZIP finder, not in any prototype ------ */
@@ -79,3 +83,95 @@
 .finder-zip-tag { font-size: 10.5px; padding: 1px 6px; border: 1px solid currentColor; }
 .finder-zip-tag.is-exact { color: var(--ink-2); }
 .finder-zip-tag.is-prefix { color: var(--stale); }
+
+/* ==================================================================
+   v1.1 — layout, the party layer, the bottom sheet.
+   ================================================================== */
+
+/* The rail holds every control, so the map can take the first screen. It
+   scrolls on its own rather than lengthening the page. */
+.wrap { padding-top: 12px; }
+.rail {
+  max-height: calc(100vh - 24px); overflow-y: auto; top: 12px;
+  overscroll-behavior: contain; padding-right: 2px;
+}
+.rail .controls { padding: 0; margin: 0; }
+.rail .finder { padding: 0; margin: 0; }
+.rail .finder input[type="text"], .rail .finder input[type="tel"] { min-width: 0; width: 100%; }
+.rail .finder-row { flex-wrap: nowrap; }
+.rail .picker { flex: 1 1 100%; }
+.rail .picker select { width: 100%; }
+.rail .perf { margin-top: 0; }
+@media (max-width: 900px) {
+  .rail { max-height: none; overflow: visible; }
+}
+.band { margin-bottom: 0; padding: 8px 12px; font-size: 12px; }
+.statebar { margin-top: 10px; margin-bottom: 0; }
+
+/* The party legend: two four-step ramps side by side and their labels. */
+.party-legend {
+  display: grid; grid-template-columns: auto auto 1fr; gap: 3px 10px;
+  align-items: start;
+}
+.party-col { display: flex; flex-direction: column; gap: 3px; }
+.party-col .legend-lab { height: 13px; line-height: 13px; }
+.party-name {
+  font: 600 10px/1 var(--sans); letter-spacing: .08em; text-transform: uppercase;
+  color: var(--ink-3); margin-bottom: 3px; white-space: nowrap;
+}
+.party-neutral { margin-top: 12px; }
+.party-neutral-chip { border: none; background: none; }
+.party-neutral-chip canvas { width: 30px; height: 13px; display: block; }
+.party-neutral b { color: var(--ink); font-weight: 600; }
+
+.sheet-seat {
+  margin-top: 8px; font-size: 12px; color: var(--ink-2);
+  padding-left: 8px; border-left: 3px solid var(--rule);
+}
+.sheet-seat-REP { border-left-color: #a80009; }
+.sheet-seat-DEM { border-left-color: #0045c7; }
+[data-theme="dark"] .sheet-seat-REP { border-left-color: #d1000e; }
+[data-theme="dark"] .sheet-seat-DEM { border-left-color: #0156ef; }
+
+/* The sheet's handle exists only as a bottom sheet. */
+.sheet-handle { display: none; }
+
+/* Under 720px the district sheet is a BOTTOM SHEET over the map rather than
+   a column far below it: hidden until a district is picked, open when one
+   is, folded to its handle by a tap. Respects the home-indicator inset. */
+@media (max-width: 720px) {
+  .sheetwrap {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
+    background: var(--paper); border-top: 1.5px solid var(--ink-3);
+    box-shadow: 0 -6px 18px rgba(0,0,0,.14);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .sheetwrap[data-state="empty"] { display: none; }
+  .sheet-handle {
+    display: block; width: 100%; text-align: left; cursor: pointer;
+    font: 600 11px/1 var(--sans); letter-spacing: .12em; text-transform: uppercase;
+    color: var(--ink-2); background: transparent; border: none;
+    padding: 12px 16px 10px; position: relative;
+  }
+  .sheet-handle::after {
+    content: "▾"; position: absolute; right: 16px; top: 10px; font-size: 14px;
+  }
+  .sheetwrap[data-state="collapsed"] .sheet-handle::after { content: "▴"; }
+  .sheet-handle:focus-visible { outline: 2px solid var(--key); outline-offset: -2px; }
+  .sheetwrap .sheet {
+    border: none; min-height: 0; max-height: 40vh; overflow-y: auto;
+    padding: 0 16px 16px;
+  }
+  .sheetwrap[data-state="collapsed"] .sheet { display: none; }
+  /* Room at the end of the page so the open sheet never covers the last
+     lines of the colophon for good. */
+  body { padding-bottom: 64px; }
+}
+
+/* The colophon, folded. */
+details.colophon summary {
+  cursor: pointer; font: 600 10.5px/1 var(--sans); letter-spacing: .14em;
+  text-transform: uppercase; color: var(--ink-2); padding: 4px 0;
+}
+details.colophon summary:focus-visible { outline: 2px solid var(--key); outline-offset: 2px; }
+details.colophon[open] summary { margin-bottom: 10px; }
