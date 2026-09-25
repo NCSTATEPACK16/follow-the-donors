@@ -387,6 +387,110 @@ export const F: System = {
   legible: [],
 }
 
+/**
+ * THE PARTY LAYER — which party holds the seat, and how much PAC money it
+ * took. A LAYER, never merged into the money map.
+ *
+ * Four money steps, not six, and that is the whole finding. Round 2's E put
+ * party in the hue and money in the lightness and measured it failing:
+ * REP↔DEM separate by ΔE 6.5 at the bottom step against a hard floor of 15,
+ * clearing it only at the top two (147 of 441 districts). The cause is
+ * structural — lightness encodes money by putting LESS INK down, and less
+ * ink is less hue (COMPARISON.md §12).
+ *
+ * What changed is not the palette but the constraint. E mixed REP, neutral
+ * and DEM continuously, so its inks had to be iso-lightness AND its chroma
+ * was capped at the most the money axis would take. An incumbent party is
+ * CATEGORICAL: a district is pure red or pure blue and never a mixture. The
+ * only constraint that survives is that the two ramps print at equal
+ * lightness, so a red step 2 and a blue step 2 read as the same money.
+ * Chroma is then free, and at four steps both gates clear:
+ *
+ *              worst normal ΔE   worst CVD ΔE   cross-step   min ΔL
+ *     light         16.7             13.6          20.0       0.062
+ *     dark          16.7             13.1          21.7       0.068
+ *     gate          15               8             15         0.06
+ *
+ * Measured over 152 passing light pairs and 76 dark; NONE passed at five or
+ * six steps (docs/superpowers/plans/2026-09-20-v1.1-legibility.md). The pair
+ * below is not the top scorer — it is the top scorer that still reads as red
+ * and blue rather than brick and violet.
+ *
+ * TWO TABLES ON PURPOSE. tableRep and tableDem differ (0.6089 vs 0.6228)
+ * because that is what makes the printed lightness match. Collapsing them
+ * into one puts party back into the money axis. inks.test.ts asserts it.
+ *
+ * DARK STOCK FAILS THE 2:1 LIGHT-END CONTRAST GATE at 1.35:1. Deliberate,
+ * and the same departure D records: a district fill carries a keyline, so
+ * the fill only has to carry ORDER among four classes. Raising the floor to
+ * fix it spends the ΔL gate, which is the one that carries the money.
+ *
+ * NEUTRAL — a seat with no single major-party incumbent (none filed, several
+ * because the lines moved, or a third-party member) prints the same four
+ * money steps in gray, so it still shows its money and never claims a party
+ * it does not have. It has its OWN tables, solved so each gray step prints
+ * at exactly the red step's lightness — borrowing red's table left the dark
+ * gray's steps at ΔL 0.059, under the gate — so its money reads on the same
+ * scale as the two parties'.
+ *
+ * COLOUR ALONE CANNOT CARRY THIS THIRD CASE, measured 2026-09-25. Searching
+ * every hue at the red/blue ramps' lightness, the best third ink reaches CVD
+ * ΔE 6.3 against both (floor 8); a gray reaches 3.2 against red under
+ * protanopia, because a desaturated red and a gray are the same colour to
+ * that reader. Two iso-lightness inks already use up the one hue axis CVD
+ * leaves. So the neutral districts carry SECONDARY ENCODING: a diagonal
+ * hatch in the keyline ink over the fill (App.tsx drawLines), and the legend
+ * shows it. That is the validator's own rule for a pair below the floor —
+ * legal only with a second channel — applied rather than waived.
+ */
+export const PARTY = {
+  inkRep: "#a80009", inkDem: "#0045c7", inkNeutral: "#4d4d4d",
+  inkRepDark: "#d1000e", inkDemDark: "#0156ef", inkNeutralDark: "#6b6b6b",
+  tableRep: [0.50, 0.6089, 0.7327, 0.88],
+  tableDem: [0.50, 0.6228, 0.7468, 0.88],
+  tableRepDark: [0.34, 0.5213, 0.6976, 0.88],
+  tableDemDark: [0.34, 0.5202, 0.6937, 0.88],
+  tableNeutral: [0.5364, 0.6431, 0.7498, 0.8471],
+  tableNeutralDark: [0.2705, 0.4476, 0.6345, 0.8214],
+  STEPS: 4,
+} as const
+
+export type PartyInk = "REP" | "DEM" | "NEUTRAL"
+
+/** The ink and step table one party prints with, on one stock. */
+export function partyPlate(party: PartyInk, dark: boolean): { ink: HexColor; table: readonly number[] } {
+  if (party === "DEM") return dark
+    ? { ink: PARTY.inkDemDark, table: PARTY.tableDemDark }
+    : { ink: PARTY.inkDem, table: PARTY.tableDem }
+  if (party === "REP") return dark
+    ? { ink: PARTY.inkRepDark, table: PARTY.tableRepDark }
+    : { ink: PARTY.inkRep, table: PARTY.tableRep }
+  return dark
+    ? { ink: PARTY.inkNeutralDark, table: PARTY.tableNeutralDark }
+    : { ink: PARTY.inkNeutral, table: PARTY.tableNeutral }
+}
+
+/** The four printed tones for one party. Derived from the ink and the table
+ *  the way D's ramp is derived — never typed, so the legend cannot drift
+ *  away from the plate. */
+export function partyRamp(party: PartyInk, dark: boolean): HexColor[] {
+  const { ink, table } = partyPlate(party, dark)
+  const paper = dark ? D.paperDark : D.paper
+  return table.map((c) => plateTone(paper, [ink], [c], dark))
+}
+
+/** Which of the four party money steps a district's cents fall in. The six
+ *  money quantile breaks fold pairwise-ish into four: step = floor(t*4). */
+export function partyStep(cents: number, breaks: number[]): number {
+  return Math.min(PARTY.STEPS - 1, Math.max(0, Math.floor(densityT(cents, breaks) * PARTY.STEPS)))
+}
+
+/** Which ink a district's incumbent_party prints in. Anything that is not a
+ *  single named party is NEUTRAL — "none" and "several" are facts, not gaps. */
+export function partyInkOf(incumbent: unknown): PartyInk {
+  return incumbent === "REP" ? "REP" : incumbent === "DEM" ? "DEM" : "NEUTRAL"
+}
+
 export const SYSTEMS: Record<string, System> = { a: A, b: B, c: C, d: D, e: E, f: F }
 /* ------------------------------------------------------------------ */
 /*  Shared encoders                                                    */
