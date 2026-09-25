@@ -294,10 +294,37 @@ def senate_rollup(cycle, rows, sector_rows, senate_st_fix=SENATE_ST_FIX):
 #  District features                                                     #
 # --------------------------------------------------------------------- #
 
+#: Every value `incumbent_party` can take. The two ambiguous ones are real
+#: values, not missing data — see the function.
+INCUMBENT_VALUES = ("REP", "DEM", "OTH", "none", "several")
+
+
+def incumbent_party(rows):
+    """Which party holds this seat, from FEC's own CAND_ICI.
+
+    `rows` is the filed incumbents for one district as (party,) tuples.
+
+    Four cases, and the last two are NOT a default to one party. Measured
+    2026-09-20: 414 of 441 districts have exactly one filed incumbent for
+    2026 (416 for 2024); 7 have several, because redistricting puts sitting
+    members in new seats, and 20 have none. Painting those 27 red or blue
+    would state something false about 6% of the map, so they get their own
+    values and the UI renders them as their own case.
+    """
+    parties = [r[0] for r in rows]
+    if not parties:
+        return "none"
+    if len(parties) > 1:
+        return "several"
+    party = parties[0]
+    return ("REP" if party in REP_CODES
+            else "DEM" if party in DEM_CODES else "OTH")
+
+
 def district_feature(geoid, state, cd, name, map_status, map_vintage,
                       legal_status, pac_dollars, contributions, candidates,
                       donor_committees, rep_dollars, dem_dollars,
-                      oth_dollars, geometry):
+                      oth_dollars, geometry, incumbent_party="none"):
     """One GeoJSON feature, money in integer cents, every ID a string."""
     return {
         "type": "Feature",
@@ -311,6 +338,7 @@ def district_feature(geoid, state, cd, name, map_status, map_vintage,
             "rep_cents": dollars_to_cents(rep_dollars),
             "dem_cents": dollars_to_cents(dem_dollars),
             "oth_cents": dollars_to_cents(oth_dollars),
+            "incumbent_party": incumbent_party,
         },
         "geometry": geometry,
     }
