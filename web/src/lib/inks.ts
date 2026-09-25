@@ -17,10 +17,12 @@
  *      (#F6F2E9 and warmer) its palest step #E8EDF7 reads 1.05:1 — invisible.
  *      Every ramp below is validated against ITS OWN paper.
  *
- * Re-run before changing anything:
- *   node scripts/validate_palette.js "<hexes>" --mode light \
+ * Re-run before changing anything. The validator is the dataviz skill's
+ * `scripts/validate_palette.js` — it ships with the skill, not in this repo:
+ *   node <dataviz>/scripts/validate_palette.js "<hexes>" --mode light \
  *        --surface "<paper>" --pairs all
- *   node scripts/validate_palette.js "<ramp>"  --ordinal --surface "<paper>"
+ *   node <dataviz>/scripts/validate_palette.js "<ramp>"  --ordinal --surface "<paper>"
+ * D's step tables are re-solved with solveTable() in ./solve.ts.
  *
  * Ported from web/prototypes/shared/inks.js — verbatim logic and comments,
  * typed for the app build.
@@ -202,28 +204,62 @@ export const C: System = {
 /* ================================================================== */
 
 /**
- * D — THREE-PLATE. Money only, extended tonal range.
+ * D — THREE-PLATE. Money only, extended tonal range — and, since 2026-09-24,
+ * a WIDER HUE SWEEP.
  *
  * ordinal: monotone PASS · every adjacent gap >= 0.06 PASS · LIGHT-END
- * CONTRAST DELIBERATELY FAILED — surface #F5F3EE, pale end #a5c8b5 at
- * 1.64:1 against a 2:1 gate (dark stock: #2a4338 at 1.67:1). See the
+ * CONTRAST DELIBERATELY FAILED — surface #F5F3EE, pale end #c1ccae at
+ * 1.51:1 against a 2:1 gate (dark stock: #4b341f at 1.54:1). See the
  * coverage floor below; this is a departure taken on the record.
  *
- * SINGLE HUE IS DELIBERATELY FAILED — hue spread 73°, against a 40° gate.
- * That is D's whole thesis and it is a departure taken on the record: the
- * three plates ARE three hues, lightness alone carries the order, and hue
- * rides along as a secondary channel the way viridis does. The gate exists
- * to stop a rainbow where hue does the encoding; here it does not. Monotone
- * L and the step gaps — the checks that actually carry the ordering — pass
- * unaided.
+ * SINGLE HUE IS DELIBERATELY FAILED — and now by more. The three plates ARE
+ * three hues, lightness alone carries the order, and hue rides along as a
+ * secondary channel the way viridis does. The gate exists to stop a rainbow
+ * where hue does the encoding; here it does not. Monotone L and the step gaps
+ * — the checks that actually carry the ordering — pass unaided, with more
+ * margin than before.
+ *
+ * WHY THE PLATES CHANGED. The user's note of 2026-09-24: the districts need
+ * more colour and more readability. Measured, the old set's bottom three
+ * steps sat within 8° of hue of each other (161/162/169) — three greens a
+ * reader told apart by lightness alone — and neighbouring steps were only
+ * ΔE 7.6 apart. The plates were re-searched (≈10k ink triples through the
+ * solver in solve.ts) for the widest hue sweep that still clears every
+ * ordering check, keeps each printed tone at chroma >= 0.04 (a three-ink
+ * overprint of near-complements prints MUD, and most wide-sweep triples do),
+ * and holds the pale end above 1.5:1. Measured on the printed composite, the
+ * dataviz validator's units:
+ *
+ *                      old (green/teal/navy)    new
+ *   LIGHT  plates      #0C8152 #1F769F #1D3681  #688e3b #096a74 #19007f
+ *          hue sweep          66°                127°   khaki → indigo
+ *          min adj ΔE          7.6                 9.1
+ *          min adj CVD ΔE      6.7                 8.5   (clears the 8 target)
+ *          min adj ΔL          0.073               0.089
+ *          pale end            1.64:1              1.51:1
+ *   DARK   plates      #3B895D #3F7D9A #3A518A  #a05b11 #2b7e75 #2773ee
+ *          hue sweep          47°                138°   umber → ice blue
+ *          min adj ΔE          7.0                 7.8
+ *          min adj CVD ΔE      7.0                 7.1
+ *          min adj ΔL          0.069               0.073
+ *          dim end             1.67:1              1.54:1
+ *
+ * The one cost is the pale end, 0.13:1 darker on light stock. Requiring the
+ * old 1.6:1 caps the sweep near 94°; 1.5:1 is the knee. It stays clear of
+ * the 1.32:1 below which (see the floor note) the pale fill stops reading as
+ * ink. Dark stock is SELECTED from its own search, not flipped: additive
+ * light from an ochre, a teal and a blue reads as umber → sage → ice.
+ *
+ * The tables are SOLVED by solveTable() and inks.test.ts asserts they equal
+ * its output, so a plate changed without a re-solve fails the build.
  */
 export const D: System = {
   id: "d", name: "Three-Plate",
   paper: "#F5F3EE", paperDark: "#17171A",
   inks: B.inks, other: "#6B6B66", inksDark: B.inksDark,
   ramp: [], rampDark: [], // derived below, never typed — see derivedRamp()
-  plates: { first: "#0C8152", second: "#1F769F", third: "#1D3681" },
-  platesDark: { first: "#3B895D", second: "#3F7D9A", third: "#3A518A" },
+  plates: { first: "#688e3b", second: "#096a74", third: "#19007f" },
+  platesDark: { first: "#a05b11", second: "#2b7e75", third: "#2773ee" },
   // The composite coverage per money step. NOT linear: the steps are spaced
   // to be equal in PERCEIVED LIGHTNESS, which is the only spacing under
   // which six quantile classes read as six. Derived — floor and ceiling are
@@ -245,6 +281,9 @@ export const D: System = {
   //     0.40         1.81:1                 0.068
   //     0.4625       2.01:1                 0.061   <- what round 2 shipped
   //
+  // (Those rows were measured on the round-2 plates. On the 2026-09-24
+  // plates the 0.34 floor measures 1.51:1 and 0.089 — see the header.)
+  //
   // The two ends are in direct conflict (COMPARISON.md §10: 2:1 is
   // unreachable below c ≈ 0.53 against this paper whatever the ink), so this
   // is a choice about which gate the map is judged by, not a bug to fix.
@@ -257,8 +296,8 @@ export const D: System = {
   // Re-derive rather than retype if the floor moves again: the four middle
   // coverages are a solved consequence of it, and a hand-edited table drifts
   // away from the lightness spacing that is the whole point.
-  table: [0.34, 0.4919, 0.6345, 0.7561, 0.8205, 0.88],
-  tableDark: [0.34, 0.5033, 0.615, 0.6964, 0.793, 0.88],
+  table: [0.34, 0.5672, 0.7114, 0.802, 0.8343, 0.88],
+  tableDark: [0.34, 0.5296, 0.6566, 0.7402, 0.8144, 0.88],
   plateOrder: ["first", "second", "third"],
   split: (t: number, n = 3) => seqWeights(t, n),
 }

@@ -27,6 +27,13 @@
   --ink-3: #85857C;
   --rule: rgba(237,237,230,.20);
   --key: #C9D4E8;
+  /* The warning inks, SELECTED for the dark stock rather than inherited.
+     They set small text (.band-num, .statebar-warn, .tag) and the light
+     values measure 3.32:1 (#B34A0C) and 2.21:1 (#6A2FAA) on #17171A —
+     under 4.5:1, i.e. the one line on the page that says a figure is
+     provisional was the hardest to read. These measure 5.98:1 and 6.35:1. */
+  --stale: #E07A3A;
+  --contested: #A98BE0;
   color-scheme: dark;
 }
 

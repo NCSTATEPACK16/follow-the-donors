@@ -21,17 +21,33 @@ import type { Atlas, DistrictProperties, FeatureCollectionOf, GeoFeatureOf, Sena
 /**
  * Cell size in CSS pixels per map vintage, at NATIONAL scale.
  *
- * Carried over from round 1's prototype B, where 4.2/7.0/11.5 was tuned down
- * to this after looking at the first render: at 11.5 the coarse screen read
- * as polka dots and pulled the eye off the money entirely.
+ * BASE_CELL carries over from round 1's prototype B, where 4.2/7.0/11.5 was
+ * tuned down to 3.6/5.6/8.4 after looking at the first render: at 11.5 the
+ * coarse screen read as polka dots and pulled the eye off the money entirely.
+ *
+ * The RATIO between the three is the certainty encoding — superseded is
+ * 2.33x current, and that is what says "173 of 441 districts sit on a map
+ * that is no longer the law". So the grain is changed only through GRAIN,
+ * which scales the whole table; editing one entry would silently change what
+ * the map claims. web/check.mjs asserts the ratio.
+ *
+ * GRAIN 0.7 (2026-09-24): the user asked for a smaller, finer screen. The
+ * current-map cell goes 3.6px -> 2.52px — an engraved grain that reads as a
+ * colour at arm's length rather than as dots — while a superseded district
+ * is still 5.9px and still visibly coarse. Costs nothing: the cell is a
+ * fragment-shader constant and coverage is untouched, so every validated
+ * tone is exactly as measured.
  */
+export const GRAIN = 0.7
+
+const BASE_CELL = { cd119_current: 3.6, cd119_contested: 5.6, cd119_superseded: 8.4 }
 export const CELL: Record<string, number> = {
-  cd119_current: 3.6,
-  cd119_contested: 5.6,
-  cd119_superseded: 8.4,
-  override_applied: 3.6,
+  cd119_current: BASE_CELL.cd119_current * GRAIN,
+  cd119_contested: BASE_CELL.cd119_contested * GRAIN,
+  cd119_superseded: BASE_CELL.cd119_superseded * GRAIN,
+  override_applied: BASE_CELL.cd119_current * GRAIN,
 }
-export const FLAT_CELL = 3.6
+export const FLAT_CELL = BASE_CELL.cd119_current * GRAIN
 
 /**
  * The state plate is re-screened COARSER, and that is the whole answer to
@@ -42,7 +58,8 @@ export const FLAT_CELL = 3.6
  * table, so every certainty ratio survives the change intact.
  */
 export const NATIONAL_SCALE = 1
-export const STATE_SCALE = 8 / CELL.cd119_current   // ≈ 2.222
+export const STATE_SCALE = 8 / BASE_CELL.cd119_current   // ≈ 2.222 — the state
+// plate keeps the same RELATIVE blow-up; with GRAIN it lands at 5.6px, not 8.
 
 /* ------------------------------------------------------------------ */
 /*  Projections                                                        */
@@ -272,7 +289,7 @@ export function renderStateBar(el: HTMLElement, { state, districts, senate }: {
         drawn from a superseded map</span>` : ""}
     </div>
     <div class="statebar-screen">Re-screened at ${
-      (CELL.cd119_current * STATE_SCALE).toFixed(0)}px —
+      (CELL.cd119_current * STATE_SCALE).toFixed(1)}px —
       a blow-up is a new plate</div>`
 }
 

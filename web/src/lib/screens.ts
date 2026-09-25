@@ -16,7 +16,20 @@
  *
  * Ported from web/prototypes/shared/screens.js (halftoneRect only — ruleRect
  * belongs to prototype C, which v1 does not ship).
+ *
+ * The port carried a second bug the shader had already fixed. The radius was
+ * sqrt(cov) * 0.707 * cell — the half-DIAGONAL, the radius at which a dot
+ * closes the whole cell — so every legend chip laid down π/2 = 1.57x the ink
+ * the map lays down at the same coverage (plate.ts's FRAG comment has the
+ * measurement). The legend was a heavier picture than the map it keys.
+ * dotRadius() is the shader's area inversion, in one place.
  */
+
+/** The radius at which a dot inks `cov` of a `cell`-sized square cell —
+ *  π r² = cov · cell², exactly as plate.ts's fragment shader computes it. */
+export function dotRadius(cov: number, cell: number): number {
+  return Math.sqrt(Math.max(0, cov) / Math.PI) * cell
+}
 
 /** One halftone plate inside the rect (x,y,w,h). `cov` is 0..1 ink coverage. */
 export function halftoneRect(
@@ -28,8 +41,7 @@ export function halftoneRect(
   const a = angleDeg * Math.PI / 180
   const cos = Math.cos(a), sin = Math.sin(a)
   const cx = x + w / 2, cy = y + h / 2
-  // 0.707 is the cell half-diagonal: at coverage 1 the dot closes the cell.
-  const R = Math.sqrt(cov) * 0.707 * cell
+  const R = dotRadius(cov, cell)
   const D = Math.hypot(w, h) / 2 + cell * 2
   ctx.save()
   ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip()

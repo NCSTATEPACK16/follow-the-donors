@@ -2,7 +2,8 @@
    Money only, extended tonal range, three drums.
 
    Round 1's B proved the two-drum overprint. D asks what a THIRD
-   plate buys: green → teal → federal blue → deep navy, where the
+   plate buys: khaki → green → teal → deep indigo (widened from
+   green → navy on 2026-09-24; inks.ts has the measurements), where the
    deep end is three inks laid over each other rather than a picked
    swatch. The ramp stays monotonic in OKLab lightness and the hue
    rides along as a secondary channel — which is what makes it a
@@ -24,7 +25,6 @@
    page and nothing on the visible map responds. Dropped in the port from
    d-threeplate.html, where the rule keyed off #lines; caught by
    web/check.mjs's hover scan. */
-#lines { position: absolute; inset: 0; }
 #lines { position: absolute; inset: 0; }
 
 /* Only the paper tooth — the halftone IS the texture, and mottle on top of

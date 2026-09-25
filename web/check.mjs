@@ -278,7 +278,22 @@ async function checkNumbers(browser, truth, senate) {
 const INSTRUMENT = () => {
   window.__draws = 0;
   window.__drifts = new Set();
+  window.__phaseAmps = new Set();
   const P = WebGL2RenderingContext.prototype;
+  // Tag each uniform location with its name, so a uniform1f call can be
+  // attributed to uPhaseAmp specifically: uniform1f also sets uDpr, uDark,
+  // uGain and the rest, and a set of all of them would prove nothing.
+  const ol = P.getUniformLocation;
+  P.getUniformLocation = function (prog, name) {
+    const loc = ol.apply(this, arguments);
+    if (loc) { try { loc.__name = name; } catch {} }
+    return loc;
+  };
+  const o1 = P.uniform1f;
+  P.uniform1f = function (loc, v) {
+    if (loc && loc.__name === "uPhaseAmp") window.__phaseAmps.add(Number(v).toFixed(4));
+    return o1.apply(this, arguments);
+  };
   const od = P.drawArrays;
   P.drawArrays = function (...a) { window.__draws++; return od.apply(this, a); };
   const ou = P.uniform2fv;
@@ -300,21 +315,78 @@ async function checkMotion(browser) {
     const a = await pg.evaluate(() => window.__draws);
     await pg.waitForTimeout(2200);
     const r = await pg.evaluate(() =>
-      ({ draws: window.__draws, drifts: window.__drifts.size }));
+      ({ draws: window.__draws, drifts: window.__drifts.size,
+         amps: [...window.__phaseAmps] }));
+    // Per-district phases: a stable value per district in the mesh. The
+    // phase is the last float of each 8-float vertex.
+    const phases = await pg.evaluate(() => {
+      const d = window.__mesh, seen = new Set();
+      if (!d) return -1;
+      for (let i = 7; i < d.length; i += 8) seen.add(d[i].toFixed(4));
+      return seen.size;
+    });
 
     if (rm === "reduce") {
       log(r.draws === a,
         `app — reduced motion: loop settles (${r.draws - a} draws after settling)`);
       log(r.drifts === 1,
         `app — reduced motion: ${r.drifts} distinct drift value(s), want exactly 1 (zero)`);
+      // An ADDITION to the drift check, not a replacement: a zero global
+      // drift with every district still wandering is still a moving map.
+      log(r.amps.length === 1 && r.amps[0] === "0.0000",
+        `app — reduced motion: per-district wander uniform only ever ${JSON.stringify(r.amps)}, want ["0.0000"]`);
     } else {
       log(r.draws > a,
         `app — breathing: still drawing (${r.draws - a} draws in 2.2s)`);
       log(r.drifts > 3,
         `app — breathing: ${r.drifts} distinct drift values (plates move)`);
+      log(r.amps.some((a) => Number(a) > 0),
+        `app — breathing: per-district wander reaches the GPU (uPhaseAmp ${JSON.stringify(r.amps)})`);
+      log(phases > 100,
+        `app — breathing: ${phases} distinct district phases in the mesh (want one per district)`);
     }
     await ctx.close();
   }
+}
+
+/**
+ * State borders exist at national view and are heavier than the district
+ * hairline. Asserted on the 2D context's lineWidth writes, because the point
+ * is a weight difference a screenshot diff would not reliably catch. And the
+ * keylines are NOT redrawn per animation frame: they never move, and
+ * re-stroking 436 rings at 60fps was pure cost.
+ */
+async function checkKeylines(browser) {
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const { pg } = await boot(ctx);
+  const widths = await pg.evaluate(() => {
+    const c = document.querySelector("#lines");
+    const seen = [];
+    const g = c.getContext("2d");
+    const d = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(g), "lineWidth");
+    Object.defineProperty(g, "lineWidth", {
+      configurable: true,
+      set(v) { seen.push(v); d.set.call(this, v); },
+      get() { return d.get.call(this); },
+    });
+    window.__redraw();
+    return seen;
+  });
+  log(widths.length > 1 && Math.max(...widths) >= Math.min(...widths) * 1.8,
+    `app — state borders drawn heavier than district lines (widths ${widths.join(", ")})`);
+
+  const strokes = await pg.evaluate(async () => {
+    const g = document.querySelector("#lines").getContext("2d");
+    let n = 0;
+    const o = g.stroke;
+    g.stroke = function () { n++; return o.apply(this, arguments); };
+    await new Promise((r) => setTimeout(r, 1500));
+    g.stroke = o;
+    return n;
+  });
+  log(strokes === 0,
+    `app — keylines are not re-stroked while the press breathes (${strokes} strokes in 1.5s idle)`);
+  await ctx.close();
 }
 
 /* ------------------------------------------------------------------ */
@@ -383,6 +455,17 @@ async function checkStateView(browser, truth, senate) {
   const national = await pg.evaluate(() => window.__press?.cellScale ?? null);
   log(national === 1, `app — national plate at screen scale 1 (got ${national})`);
 
+  // The certainty RATIO is the encoding, not the cell size. A finer grain is
+  // a scale on the whole table (view.ts GRAIN); if a future change edits one
+  // entry instead, the map starts claiming something else, and this fails.
+  const ratio = await pg.evaluate(() => {
+    const C = window.__riso.CELL;
+    return { coarse: C.cd119_superseded / C.cd119_current,
+             mid: C.cd119_contested / C.cd119_current };
+  });
+  log(Math.abs(ratio.coarse - 7 / 3) < 0.02 && Math.abs(ratio.mid - 14 / 9) < 0.02,
+    `app — certainty ratio preserved (superseded ${ratio.coarse.toFixed(3)}x current, want 2.333)`);
+
   for (const { st, why } of STATE_CASES) {
     const want = per.get(st);
     await enterState(pg, st);
@@ -412,8 +495,10 @@ async function checkStateView(browser, truth, senate) {
     // The re-screen, asserted on the uniform and then against its own label.
     log(Math.abs(got.scale - got.wantScale) < 1e-9,
       `${lab} — re-screened on the GPU (cellScale ${got.scale.toFixed(3)})`);
-    const claimed = Number((got.screenLine.match(/at (\d+)px/) ?? [])[1] ?? -1);
-    log(claimed === Math.round(got.cellPx),
+    // One decimal, because GRAIN puts the state cell at 5.6px: rounding both
+    // sides to an integer would let a 5.6px label pass over a 6.4px plate.
+    const claimed = Number((got.screenLine.match(/at ([\d.]+)px/) ?? [])[1] ?? -1);
+    log(claimed.toFixed(1) === got.cellPx.toFixed(1),
       `${lab} — label says ${claimed}px, plate is at ${got.cellPx.toFixed(1)}px`);
 
     // The money, through the page's own formatter so the comparison is of
@@ -784,6 +869,8 @@ console.log("\n— the numbers —");
 await checkNumbers(browser, truth, senate);
 console.log("\n— motion —");
 await checkMotion(browser);
+console.log("\n— the keylines —");
+await checkKeylines(browser);
 console.log("\n— the state blow-up —");
 await checkStateView(browser, truth, senate);
 console.log("\n— v1 features —");

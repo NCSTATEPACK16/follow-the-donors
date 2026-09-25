@@ -14,6 +14,49 @@ the measurement each idea has to get past.
 - **`main`** carries stages 01–10, the app, and the Worker. `pytest` 104 ·
   `vitest` 5 · `node web/check.mjs` 80 checks, all green.
 - **Nothing has been spent.** No R2 bucket, no credentials, no object written.
+- **Branch `claude/brave-feynman-ahbiv5` (2026-09-24)** carries the design
+  audit below — not yet merged or deployed. `vitest` 20. The harness gained
+  six checks (ratio, per-district wander ×2, phases, state borders, no
+  per-frame keyline restroke), each seen to fail against broken code. It was
+  run against a synthetic fixture only — real artifacts could not be fetched
+  into that session — so **re-run `node web/check.mjs` on real data before
+  deploying.**
+
+---
+
+## Design audit, 2026-09-24 — what changed and why
+
+The user's note: the colour scheme and readability of each district need
+refinement, riso for sure; smaller / more movement per section; broader
+colour. Taken as: widen the **money ramp** (not the party layer), and
+**per-district, finer** motion.
+
+| | was | now | where |
+|---|---|---|---|
+| Money ramp hue sweep | 66° light / 47° dark | **127° / 138°** — khaki→indigo; umber→ice on dark | `inks.ts` D |
+| Min adjacent ΔE between money steps | 7.6 / 7.0 | **9.1 / 7.8** | asserted in `inks.test.ts` |
+| Min adjacent CVD ΔE | 6.7 / 7.0 | **8.5** / 7.1 | |
+| Pale-end contrast | 1.64 / 1.67:1 | **1.51 / 1.54:1** — the one cost, recorded | |
+| Step tables | typed copy of an out-of-repo solve | `solve.ts`; tests assert table = solve output | |
+| Grain | 3.6px current | `GRAIN` 0.7 → 2.52px, ratio 2.33× kept | `view.ts` |
+| Motion | one drift per plate, whole sheet | + per-district wander on its own clock, 0.34px | `plate.ts` |
+| Structure | every ring 0.75px, no state borders | 0.6px districts under 1.6px states | `App.tsx` |
+
+**Correction to the v1.1 plan's Task 3, found in review:** its shader added
+`vec2(cos a, sin a) * uPhaseAmp` — a *fixed* offset per district — so every
+district would still have moved in unison with the global drift. The phase
+has to modulate time; `wander()` in `plate.ts` does. If you execute the rest
+of the v1.1 plan, Tasks 3, 4 and 5 are **done** here; skip them.
+
+**Fixed along the way:** the legend was drawn from a different map (no step
+table, superseded cell size, the 1.57× half-diagonal dot radius the shader
+had already fixed); keylines were re-stroked every animation frame; dark
+stock had no warning inks of its own (3.32:1 and 2.21:1 as small text);
+`mesh 0 verts` on a cold deep link (the known defect below — now fixed).
+
+**Still open from v1.1:** the party layer (Tasks 1, 2, 7 — needs a stage 07
+re-run for `incumbent_party`), double-click zoom tiers (Task 6), the
+viewport-filling layout (Task 8).
 
 **Verify anything you change with `node web/check.mjs`** (build first). It is
 the file that found all three v1 picking bugs, and each of its checks has been
@@ -193,6 +236,7 @@ at all** at national view. The states geometry is already loaded — `atlas.stat
 
 | | what | note |
 |---|---|---|
+| **Risk** | **A git-triggered Netlify build ships no data** | `netlify.toml` builds `web/` from git, but `web/public/data` is gitignored (it is a symlink to local `data/artifacts/`). The live site works because it was deployed from a local `web/dist`. If Netlify's git integration ever builds on push, it publishes a map with every fetch 404ing. Either deploy only by CLI from a machine with the artifacts, or set `VITE_DATA_BASE_URL` to where the artifacts really live. |
 | **Decision** | **R2 + Worker, or just Netlify?** | The site is live on Netlify serving data from its own origin, and `worker/` is written but never deployed. Phase 7 may no longer be needed for v1. Decide deliberately — do not let it rot half-done. |
 | Phase 7 | `scripts/11_upload_r2.py` | Blocked: no account ID, key pair or bucket. **First cloud write in the project; needs explicit approval.** `boto3` is pinned and ready. Budget measured: ~4.3 MB of artifacts against ~8.1 GB free. |
 | Geometry | AL, CA, FL, LA, NC, OH, TN, TX, UT | Nine states we do not hold 2025-26 lines for; **173 of 441 districts render as superseded** because of it. Adding one is a data change: drop the shapefile in, name it in `geometry_source`. |
@@ -203,9 +247,8 @@ at all** at national view. The states geometry is already loaded — `atlas.stat
 
 ## Known small defects
 
-- **`mesh 0 verts` in the perf line on a cold deep link.** The readout is
-  written before the state blow-up rebuilds the mesh, so a `#geoid` load
-  reports zero. Cosmetic, but it is a number on screen that is not true.
+- ~~**`mesh 0 verts` in the perf line on a cold deep link.**~~ Fixed
+  2026-09-24: the readout is written by `layout()`, after the mesh exists.
 - **The prototypes carry the picking bug that v1 fixed.**
   `web/prototypes/shared/atlas.js` still decodes an antialiased colour buffer
   without arbitration. Left deliberately: the prototypes are the record of
