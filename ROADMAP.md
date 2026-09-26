@@ -1,6 +1,7 @@
 # Roadmap
 
-> **Mid-flight work: read `docs/NEXT_SESSION.md` first** (2026-09-25).
+> **Mid-flight work: read `docs/NEXT_SESSION.md` first** (2026-09-26). The next
+> plan is `docs/superpowers/plans/2026-09-26-v1.2.md`.
 
 Written 2026-09-20, after v1 merged to `main` (PR #1). `CLAUDE.md` holds the
 invariants and they are binding. `docs/HANDOFF.md` holds the reasoning behind
