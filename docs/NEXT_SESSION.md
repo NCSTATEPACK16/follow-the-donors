@@ -31,7 +31,13 @@ netlify.com. So:
    `node web/check.mjs`. **All green**, or explain every FAIL.
 3. Look at it: light and dark, 1440 and 400, three tiers, three layers. In
    particular, the dark-stock district tier, which nobody has seen on real data.
-4. Deploy: `netlify deploy --prod --dir web/dist`.
+4. Publish the data: `scripts/publish_data.sh` (needs `gh auth login`).
+   From then on every merge to `main` deploys automatically: Netlify
+   downloads the archive from the `data` release and builds. To deploy the
+   new data without a merge, use Netlify > Deploys > Trigger deploy. Re-run
+   the script after every pipeline refresh.
+   Needs, once: the Netlify site linked to this GitHub repo (Site
+   configuration > Build & deploy > Continuous deployment).
 
 Until step 1 runs, the live party layer shows its "data predates this field"
 note. That is deliberate and safe.
