@@ -239,7 +239,7 @@ at all** at national view. The states geometry is already loaded — `atlas.stat
 
 | | what | note |
 |---|---|---|
-| **Risk** | **A git-triggered Netlify build ships no data** | `netlify.toml` builds `web/` from git, but `web/public/data` is gitignored (it is a symlink to local `data/artifacts/`). The live site works because it was deployed from a local `web/dist`. If Netlify's git integration ever builds on push, it publishes a map with every fetch 404ing. Either deploy only by CLI from a machine with the artifacts, or set `VITE_DATA_BASE_URL` to where the artifacts really live. |
+| **Done** | **A git-triggered Netlify build ships no data** | Fixed 2026-09-26. `scripts/publish_data.sh` (data machine) uploads `data/artifacts` to the repo's `data` GitHub Release; `netlify.toml` runs `web/scripts/fetch-data.mjs` to download it, then `require-data.mjs`, then the build. Every merge to `main` deploys with the last published data; with none published the build fails and the last good deploy stays live. |
 | **Decision** | **R2 + Worker, or just Netlify?** | The site is live on Netlify serving data from its own origin, and `worker/` is written but never deployed. Phase 7 may no longer be needed for v1. Decide deliberately — do not let it rot half-done. |
 | Phase 7 | `scripts/11_upload_r2.py` | Blocked: no account ID, key pair or bucket. **First cloud write in the project; needs explicit approval.** `boto3` is pinned and ready. Budget measured: ~4.3 MB of artifacts against ~8.1 GB free. |
 | Geometry | AL, CA, FL, LA, NC, OH, TN, TX, UT | Nine states we do not hold 2025-26 lines for; **173 of 441 districts render as superseded** because of it. Adding one is a data change: drop the shapefile in, name it in `geometry_source`. |
