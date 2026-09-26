@@ -579,9 +579,21 @@ async function checkLayout(browser) {
       Math.abs(open.bottom - open.vh) <= 1 && open.h < open.vh * 0.6,
     `app · 390px — the sheet is a bottom sheet: hidden until a pick (${before}), then ` +
     `${open.pos} at the bottom, ${open.h}px of ${open.vh}`);
-  await mp.click(".sheet-handle", { timeout: 3000 }).catch(() => {});
+  // If the tap can't land, say what is in the way instead of a bare "open".
+  const onHandle = await mp.evaluate(() => {
+    const h = document.querySelector(".sheet-handle");
+    if (!h) return "no handle";
+    const r = h.getBoundingClientRect();
+    const e = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+    return e === h ? "handle" : `${e?.tagName.toLowerCase()}.${e?.className} at ${Math.round(r.y)}px`;
+  });
+  let why = "";
+  await mp.click(".sheet-handle", { timeout: 3000 })
+    .catch((e) => { why = `; click failed: ${e.message.split("\n")[0].slice(0, 120)}`; });
+  await mp.waitForTimeout(300);
   const folded = await mp.evaluate(() => document.querySelector(".sheetwrap")?.dataset.state ?? "absent");
-  log(folded === "collapsed", `app · 390px — a tap on the handle folds it (${folded})`);
+  log(folded === "collapsed",
+    `app · 390px — a tap on the handle folds it (${folded}; top element: ${onHandle}${why})`);
   await m.close();
 }
 
