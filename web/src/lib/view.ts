@@ -11,7 +11,7 @@
  * Ported from web/prototypes/shared/view.js.
  */
 import { geoBounds, geoConicEqualArea } from "d3-geo"
-import { usd, usdCompact } from "./inks"
+import { PARTY, partyPlate, usd, usdCompact, type PartyInk } from "./inks"
 import type { Atlas, DistrictProperties, FeatureCollectionOf, GeoFeatureOf, SenateArtifact, StateProperties } from "./atlas"
 
 /* ------------------------------------------------------------------ */
@@ -61,6 +61,21 @@ export const NATIONAL_SCALE = 1
 export const STATE_SCALE = 8 / BASE_CELL.cd119_current   // ≈ 2.222 — the state
 // plate keeps the same RELATIVE blow-up; with GRAIN it lands at 5.6px, not 8.
 
+/**
+ * A district blow-up is a THIRD plate, re-screened again.
+ *
+ * Same rule as the state tier: a print shop re-screens for a new size rather
+ * than enlarging the old screen's dots. One multiplier over CELL, so every
+ * certainty ratio survives — a superseded district is still 2.33x coarser
+ * than a current one at all three sizes.
+ *
+ * 14px at base, not the v1.1 plan's 18: the plan predates GRAIN, and 18 on
+ * the finer grain put a superseded district's dots at 29px — polka dots,
+ * which is the exact failure round 1 tuned CELL down to avoid. At 14 the
+ * current cell is 9.8px and superseded 22.9px: visibly dots, still a screen.
+ */
+export const DISTRICT_SCALE = 14 / BASE_CELL.cd119_current   // ≈ 3.889
+
 /* ------------------------------------------------------------------ */
 /*  Projections                                                        */
 /* ------------------------------------------------------------------ */
@@ -87,6 +102,16 @@ export function makeStateProjection(features: GeoFeatureOf<DistrictProperties>[]
     .parallels([p1, p2])
     .rotate([-lon, 0])
     .fitExtent([[pad, pad], [width - pad, height - pad]], fc as never)
+}
+
+/** One district, fitted — the same conic as makeStateProjection, which is
+ *  correct at any scale and can draw the territory delegations Albers USA
+ *  structurally cannot. More padding than a state: a lone district needs
+ *  room for its keyline to read as an edge rather than a frame. */
+export function makeDistrictProjection(
+  feature: GeoFeatureOf<DistrictProperties>, width: number, height: number, pad = 28,
+) {
+  return makeStateProjection([feature], width, height, pad)
 }
 
 /** Every district feature belonging to one state, in geoid order. */
@@ -265,15 +290,31 @@ export function renderSenateTable(el: HTMLElement, states: GeoFeatureOf<StatePro
 /*  The state bar                                                      */
 /* ------------------------------------------------------------------ */
 
-/** The "you are looking at Texas" strip, with the way back. */
-export function renderStateBar(el: HTMLElement, { state, districts, senate }: {
+/** The "you are looking at Texas" strip, with the way back — one tier at a
+ *  time: a district goes back to its state, a state to the nation. */
+export function renderStateBar(el: HTMLElement, { state, districts, senate, district }: {
   state: string | null
   districts: GeoFeatureOf<DistrictProperties>[]
   senate: StateProperties | null | undefined
   cycle: string
+  district?: DistrictProperties | null
 }) {
   if (!state) { el.hidden = true; el.innerHTML = ""; return }
   el.hidden = false
+  if (district) {
+    el.innerHTML = `
+    <button class="ctl statebar-back" id="backtonational">← All of ${state}</button>
+    <div class="statebar-id">${state}-${district.cd}</div>
+    <div class="statebar-facts">
+      <span><b>${usdCompact(district.pac_cents)}</b> in PAC money</span>
+      ${district.map_status === "cd119_superseded" ? `<span class="statebar-warn">drawn
+        from a superseded map</span>` : ""}
+    </div>
+    <div class="statebar-screen">Re-screened at ${
+      (CELL.cd119_current * DISTRICT_SCALE).toFixed(1)}px —
+      a blow-up is a new plate</div>`
+    return
+  }
   const tot = districts.reduce((a, f) => a + f.properties.pac_cents, 0)
   const stale = districts.filter(
     (f) => f.properties.map_status === "cd119_superseded").length
@@ -291,6 +332,76 @@ export function renderStateBar(el: HTMLElement, { state, districts, senate }: {
     <div class="statebar-screen">Re-screened at ${
       (CELL.cd119_current * STATE_SCALE).toFixed(1)}px —
       a blow-up is a new plate</div>`
+}
+
+/* ------------------------------------------------------------------ */
+/*  The party layer's legend                                           */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The four money steps' labels. The six quantile classes fold into four the
+ * same way partyStep() folds them (floor(i/5 * 4)): classes 0-1 are step 0,
+ * 2 is 1, 3 is 2, 4-5 are 3. Derived from the breaks, never typed.
+ */
+export function partyStepLabels(breaks: number[]): string[] {
+  return [
+    `under ${usdCompact(breaks[1])}`,
+    `${usdCompact(breaks[1])} – ${usdCompact(breaks[2])}`,
+    `${usdCompact(breaks[2])} – ${usdCompact(breaks[3])}`,
+    `over ${usdCompact(breaks[3])}`,
+  ]
+}
+
+/**
+ * Two four-step ramps side by side, plus the neutral case with its hatch.
+ * Chips are empty spans the caller paints with the real halftone, exactly
+ * like the money legend — `data-party` and `data-step` say what to paint.
+ */
+export function renderPartyLegend(el: HTMLElement, opts: {
+  cycle: string; breaks: number[]; ambiguous: number; hasData: boolean
+}) {
+  if (!opts.hasData) {
+    el.innerHTML = `
+      <div class="legend-title">Who holds the seat, ${opts.cycle} cycle</div>
+      <p class="legend-foot">This build's district data predates the party
+        field. Rebuild stage 07 to draw this layer.</p>`
+    return
+  }
+  const labels = partyStepLabels(opts.breaks)
+  const col = (party: PartyInk, name: string) => `
+    <div class="party-col">
+      <div class="party-name">${name}</div>
+      ${labels.map((_, i) => `<span class="legend-chip" data-party="${party}" data-step="${i}"></span>`).join("")}
+    </div>`
+  el.innerHTML = `
+    <div class="legend-title">Who holds the seat, ${opts.cycle} cycle</div>
+    <div class="party-legend">
+      ${col("REP", "Republican")}
+      ${col("DEM", "Democrat")}
+      <div class="party-col party-labels">
+        <div class="party-name">PAC money</div>
+        ${labels.map((l) => `<span class="legend-lab">${l}</span>`).join("")}
+      </div>
+    </div>
+    <div class="lv party-neutral">
+      <span class="lv-mark party-neutral-chip" data-party="NEUTRAL" data-step="1"></span>
+      <span><b>No single party incumbent</b> — ${opts.ambiguous} district${
+        opts.ambiguous === 1 ? "" : "s"}: nobody has filed as the sitting member,
+        more than one has because the lines moved, or the member is a third
+        party. Gray, and hatched, because colour alone cannot tell it from red
+        for a red-green colour-blind reader.</span>
+    </div>
+    <p class="legend-foot"><b>Four money steps, not six.</b> Red and blue have
+      to stay apart from each other at every level, and that costs tonal
+      range: any finer and the lightest red and blue become the same colour
+      to a red-green colour-blind reader. The money map keeps all six.</p>`
+}
+
+/** Paint one party chip: the plate's own ink at the step's own coverage,
+ *  at the map's cell — the same rule as the money legend. */
+export function partyChipCoverage(party: PartyInk, step: number, dark: boolean) {
+  const { ink, table } = partyPlate(party, dark)
+  return { ink, cov: table[Math.max(0, Math.min(PARTY.STEPS - 1, step))] }
 }
 
 /** The state picker. A map you can only enter by clicking a 2px polygon is

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { D, coverageAt, derivedRamp, splitInk } from "./inks"
+import { D, PARTY, coverageAt, derivedRamp, partyInkOf, partyRamp, partyStep, splitInk } from "./inks"
 import { deltaE, hueSweep, okL, solveTable } from "./solve"
 
 describe("derivedRamp", () => {
@@ -105,4 +105,51 @@ describe("D's printed ramp", () => {
       expect(hueSweep(ramp)).toBeGreaterThanOrEqual(110)
     })
   }
+})
+
+describe("PARTY", () => {
+  it("carries four money steps, not six — the measured limit", () => {
+    expect(PARTY.STEPS).toBe(4)
+    for (const t of [PARTY.tableRep, PARTY.tableDem, PARTY.tableRepDark, PARTY.tableDemDark]) {
+      expect(t).toHaveLength(4)
+    }
+  })
+
+  it("gives the two parties their OWN coverage tables", () => {
+    // They differ so the two ramps PRINT at the same lightness. A red step 2
+    // and a blue step 2 have to read as the same money.
+    expect(PARTY.tableRep).not.toEqual(PARTY.tableDem)
+    expect(PARTY.tableRepDark).not.toEqual(PARTY.tableDemDark)
+  })
+
+  for (const dark of [false, true]) {
+    const stock = dark ? "dark" : "light"
+    it(`${stock}: red and blue clear the 15 normal-vision floor at EVERY money step`, () => {
+      // Round 2's E failed exactly this at the bottom four of six steps.
+      const R = partyRamp("REP", dark), B = partyRamp("DEM", dark)
+      for (let i = 0; i < 4; i++) expect(deltaE(R[i], B[i])).toBeGreaterThanOrEqual(15)
+    })
+
+    it(`${stock}: every ramp steps by >= 0.06 lightness, and all three agree on the money`, () => {
+      const ramps = (["REP", "DEM", "NEUTRAL"] as const).map((p) => partyRamp(p, dark).map(okL))
+      for (const L of ramps) {
+        for (let i = 1; i < 4; i++) expect(Math.abs(L[i] - L[i - 1])).toBeGreaterThanOrEqual(0.06)
+      }
+      for (let i = 0; i < 4; i++) {
+        expect(Math.abs(ramps[0][i] - ramps[1][i])).toBeLessThan(0.03)
+        expect(Math.abs(ramps[0][i] - ramps[2][i])).toBeLessThan(0.03)
+      }
+    })
+  }
+
+  it("never paints an ambiguous seat as a party", () => {
+    expect(partyInkOf("REP")).toBe("REP")
+    expect(partyInkOf("DEM")).toBe("DEM")
+    for (const v of ["OTH", "none", "several", undefined, null]) expect(partyInkOf(v)).toBe("NEUTRAL")
+  })
+
+  it("folds the six money quantiles into four steps, bottom to top", () => {
+    const breaks = [10, 20, 30, 40, 50]
+    expect([5, 15, 25, 35, 45, 55].map((c) => partyStep(c, breaks))).toEqual([0, 0, 1, 2, 3, 3])
+  })
 })

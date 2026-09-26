@@ -50,6 +50,11 @@ MAX_GEO_AREA_SR = 0.1
 #: they still carry real geometry and real money in this artifact.
 EXPECTED_DISTRICTS = 441
 
+#: Districts with exactly one filed incumbent, named as a party. Measured
+#: 2026-09-20 at 414 (2026) and 416 (2024); the floor sits under both
+#: because the filing record moves. A ratchet: raise it, never lower it.
+MIN_NAMED_INCUMBENTS = 400
+
 
 def mapshaper(*args):
     subprocess.run(["npx", "--yes", "mapshaper@0.6.102", *args],
@@ -93,6 +98,20 @@ def build_districts_and_states(con, cycle):
             FROM attribution_{cycle}
             WHERE bucket = 'district'
             GROUP BY 1
+        ), inc AS (
+            -- Who holds the seat, from FEC's own incumbent flag. cn is not
+            -- unique on CAND_ID (duplicate registrations), hence DISTINCT.
+            -- CAND_OFFICE_DISTRICT is ragged and '00' is a real at-large
+            -- value on both sides of the join: lpad, never an int cast, or
+            -- seven at-large states lose their incumbent silently.
+            SELECT CAND_OFFICE_ST AS st,
+                   lpad(CAND_OFFICE_DISTRICT, 2, '0') AS cd,
+                   count(DISTINCT CAND_ID) AS n,
+                   min(CAND_PTY_AFFILIATION) AS party
+            FROM cn
+            WHERE cycle = '{cycle}' AND CAND_OFFICE = 'H'
+              AND CAND_ICI = 'I' AND CAND_STATUS = 'C'
+            GROUP BY 1, 2
         )
         SELECT d.district_geoid,
                t.state_usps, t.cd, t.district_name,
@@ -101,19 +120,25 @@ def build_districts_and_states(con, cycle):
                COALESCE(p.rep, 0)                AS rep_dollars,
                COALESCE(p.dem, 0)                AS dem_dollars,
                COALESCE(p.tot - p.rep - p.dem, 0) AS oth_dollars,
-               ST_AsGeoJSON(d.geom)               AS gj
+               ST_AsGeoJSON(d.geom)               AS gj,
+               i.n                                AS inc_n,
+               i.party                            AS inc_party
         FROM districts_raw d
         JOIN district_totals_{cycle} t USING (district_geoid)
         LEFT JOIN party p USING (district_geoid)
+        LEFT JOIN inc i ON i.st = t.state_usps AND i.cd = t.cd
         ORDER BY d.district_geoid
     """).fetchall()
 
     features = [
         A.district_feature(
             geoid, st, cd, name, status, vintage, legal, pac_dollars,
-            contribs, cands, donors, rep, dem, oth, json.loads(gj))
+            contribs, cands, donors, rep, dem, oth, json.loads(gj),
+            A.incumbent_party(
+                [] if inc_n is None else [(inc_party,)] * int(inc_n)))
         for (geoid, st, cd, name, status, vintage, legal, pac_dollars,
-             contribs, cands, donors, rep, dem, oth, gj) in rows
+             contribs, cands, donors, rep, dem, oth, gj, inc_n, inc_party)
+        in rows
     ]
 
     raw = os.path.join(ARTIFACTS, f"_districts.raw.{cycle}.geojson")
@@ -376,6 +401,21 @@ def main():
                     f"{len(senate['corrections'])} correction(s), "
                     f"{senate['seats_up']} up / {senate['banked_states']} "
                     "banked")
+
+        # Floor 400 rather than the measured 414 for the same reason
+        # MIN_MATCHED is a ratchet: the filing record moves. Raise it to
+        # what the run reports, never lower it.
+        bad_party = sum(
+            1 for f in features
+            if f["properties"].get("incumbent_party") not in A.INCUMBENT_VALUES)
+        r.check(f"{cycle_s} every district carries an incumbent_party",
+                bad_party == 0, f"{bad_party} feature(s) with a bad value")
+        named = sum(1 for f in features
+                    if f["properties"]["incumbent_party"] in ("REP", "DEM", "OTH"))
+        r.check(f"{cycle_s} a named incumbent in {MIN_NAMED_INCUMBENTS}+ "
+                "districts, the rest stated as ambiguous",
+                named >= MIN_NAMED_INCUMBENTS,
+                f"{named} named, {len(features) - named} none/several")
 
         non_string_ids = sum(
             1 for f in features

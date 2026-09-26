@@ -9,6 +9,7 @@
  */
 import { SECTOR_ORDER, OTHER_LABEL, STATUS_LABEL, usd, usdCompact, type System } from "./inks"
 import { ASSETS, type Cycle } from "./config"
+import { seatLine } from "./atlas"
 
 export interface TopCommittee {
   cmte_id: string
@@ -58,12 +59,18 @@ function inkForSector(sys: System, name: string, dark: boolean): string {
  * class names, same rail), extended with a top-PAC list and a provenance
  * line. Rendered once the page JSON has loaded; renderSheet's lighter
  * geometry-only version covers the gap while the fetch is in flight. */
-export function renderDistrictPageSheet(el: HTMLElement, page: DistrictPage, sys: System, dark: boolean) {
+/** `incumbent` comes from the district's geometry feature: stage 09's page
+ *  does not carry it, and the feature is already loaded. */
+export function renderDistrictPageSheet(el: HTMLElement, page: DistrictPage, sys: System, dark: boolean, incumbent?: unknown) {
   const total = page.sectors.reduce((a, [, c]) => a + c, 0) || 1
   const stale = page.map_status === "cd119_superseded"
   const contested = page.map_status === "cd119_contested"
   const rows = page.sectors.slice(0, 6)
 
+  // Which renderer drew the sheet. The geometry sheet now shows first and
+  // this page replaces it, so anything that needs the page (the harness,
+  // a test) waits on this rather than on a title both renderers draw.
+  el.dataset.source = "page"
   el.innerHTML = `
     <div class="sheet-head">
       <div class="sheet-eyebrow">${page.state} · District ${page.cd}</div>
@@ -72,6 +79,7 @@ export function renderDistrictPageSheet(el: HTMLElement, page: DistrictPage, sys
       <div class="sheet-sub">from ${page.donor_committees.toLocaleString()} political
         committees · ${page.contributions.toLocaleString()} contributions ·
         ${page.candidates} candidate${page.candidates === 1 ? "" : "s"}</div>
+      ${seatLine(incumbent)}
     </div>
     <div class="vintage ${stale ? "is-stale" : contested ? "is-contested" : "is-current"}">
       <span class="vintage-mark" aria-hidden="true"></span>

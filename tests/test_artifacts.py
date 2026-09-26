@@ -276,3 +276,35 @@ def test_top_committees_is_limited():
     top = _a.top_committees(rows, limit=10)
     assert len(top) == 10
     assert top[0]["cmte_id"] == "C019"
+
+
+def test_incumbent_party_maps_the_four_cases():
+    """One incumbent gives a party; DFL is DEM; and the two ambiguous cases
+    are their own values, never a default to one party. 27 of 441 districts
+    are ambiguous in 2026 and calling them REP or DEM would be a lie about
+    6% of the map."""
+    assert _a.incumbent_party([("REP",)]) == "REP"
+    assert _a.incumbent_party([("DFL",)]) == "DEM"     # Minnesota DFL
+    assert _a.incumbent_party([("DEM",)]) == "DEM"
+    assert _a.incumbent_party([("LIB",)]) == "OTH"
+    assert _a.incumbent_party([]) == "none"
+    assert _a.incumbent_party([("REP",), ("DEM",)]) == "several"
+    assert _a.incumbent_party([("REP",), ("REP",)]) == "several"
+    for rows in ([], [("REP",)], [("DFL",)], [("GRE",)], [("REP",), ("DEM",)]):
+        assert _a.incumbent_party(rows) in _a.INCUMBENT_VALUES
+
+
+def test_district_feature_carries_incumbent_party():
+    f = _a.district_feature(
+        "4835", "TX", "35", "Congressional District 35",
+        "cd119_superseded", "2025 mid-decade redraw", "in_effect",
+        536650.00, 206, 5, 157, 300000.00, 200000.00, 36650.00,
+        {"type": "Polygon", "coordinates": []}, "DEM")
+    assert f["properties"]["incumbent_party"] == "DEM"
+
+
+def test_district_feature_defaults_to_no_incumbent_not_a_party():
+    f = _a.district_feature(
+        "5600", "WY", "00", "At Large", "cd119_current", "cd119", "in_effect",
+        1.0, 1, 1, 1, 0, 0, 0, {"type": "Polygon", "coordinates": []})
+    assert f["properties"]["incumbent_party"] == "none"
