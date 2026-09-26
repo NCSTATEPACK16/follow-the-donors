@@ -464,6 +464,10 @@ export default function App() {
         view = { ...view, ...next }
         if (next.mode === "national") { view.st = null; view.geoid = null }
         if (view.mode !== "district") view.geoid = null
+        // The hovered shape belongs to the plate being replaced; its tooltip
+        // would otherwise float over the new one until the pointer moves.
+        hov = -1
+        tip.hidden = true
         el(innerRef).classList.add("is-swapping")
         const go = () => {
           el(innerRef).classList.remove("is-swapping")
