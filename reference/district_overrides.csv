@@ -23,20 +23,29 @@
 #                    moved and cannot draw it — scripts/_districts.py reports
 #                    that state as cd119_superseded, which is what the UI must
 #                    tell a visitor. It is NOT the same as cd119_current.
+#                    Setting it requires provenance_kind = enacting_authority
+#                    and district_field; load_overrides() refuses otherwise.
+#                    The enacted map is drawn only for the cycles it governs
+#                    (_districts.OVERRIDE_CYCLES = 2026). 2024 stays on cd119,
+#                    the lines it was contested on, and reads as superseded.
+#   district_field   The attribute in the enacted file that holds the district
+#                    number, read off the file by a person — never guessed.
+#                    Values are normalised by _districts.normalise_cd():
+#                    "1", "01", "District 1" -> "01"; "AL", "0" -> "00".
 #
 # Facts below were read from the cited article on 2026-09-18. Replacing each
 # provenance_url with the enacting authority's own record, and filling in
 # geometry_source, is the remaining Phase 3 work — tracked by
 # _districts.sourcing_gaps() and printed in reports/05_districts.md.
-state,vintage,enacted_date,legal_status,provenance_url,geometry_source,provenance_kind,notes
-TX,2025 mid-decade redraw,2025-08-29,in_effect,https://en.wikipedia.org/wiki/2025%E2%80%932026_United_States_redistricting,,documentary,Special-session bill. Struck down as a racial gerrymander 2025-11-18; SCOTUS stayed that ruling 2025-12-04 (6-3) so the map is used in 2026.
-MO,2025 mid-decade redraw,2025-09-28,blocked,https://en.wikipedia.org/wiki/2025%E2%80%932026_United_States_redistricting,,documentary,Missouri Supreme Court ordered the old map used; SCOTUS upheld 2026-09-10. cd119 is operative.
-NC,2025 mid-decade redraw,2025-10-22,in_effect,https://en.wikipedia.org/wiki/2025%E2%80%932026_United_States_redistricting,,documentary,Legislative bill; no gubernatorial signature required. Federal panel approved 2025-11-26.
-OH,2025 decennial re-adoption,2025-10-31,in_effect,https://en.wikipedia.org/wiki/2025%E2%80%932026_United_States_redistricting,,documentary,Unanimous Ohio Redistricting Commission vote; locked until 2032.
-CA,2025 Proposition 50,2025-11-04,in_effect,https://en.wikipedia.org/wiki/2025%E2%80%932026_United_States_redistricting,,documentary,Voter-approved ballot measure. Upheld January 2026; SCOTUS denied the appeal 2026-02-04.
-UT,2025 court-ordered remedial,2025-11-10,in_effect,https://en.wikipedia.org/wiki/2025%E2%80%932026_United_States_redistricting,,documentary,State district court ordered map.
-VA,2026 referendum redraw,2026-04-21,blocked,https://en.wikipedia.org/wiki/2025%E2%80%932026_United_States_redistricting,,documentary,Referendum struck down by the Virginia Supreme Court 2026-05-08; SCOTUS denied a stay 2026-05-15. cd119 is operative.
-FL,2026 mid-decade redraw,2026-05-04,in_effect,https://en.wikipedia.org/wiki/2025%E2%80%932026_United_States_redistricting,,documentary,Special-session bill.
-TN,2026 mid-decade redraw,2026-05-07,in_effect,https://en.wikipedia.org/wiki/2025%E2%80%932026_United_States_redistricting,,documentary,Signed by the governor. Challenge pending — the chief district judge declined to block it 2026-05-26.
-LA,2026 redraw,2026-05-29,in_effect,https://en.wikipedia.org/wiki/2025%E2%80%932026_United_States_redistricting,,documentary,Legislative bill; facing legal challenges but operative.
-AL,2026 court-ordered map,2026-06-02,in_effect,https://en.wikipedia.org/wiki/2025%E2%80%932026_United_States_redistricting,,documentary,SCOTUS emergency order (unsigned 6-3) removed the prior injunction.
+state,vintage,enacted_date,legal_status,provenance_url,geometry_source,provenance_kind,notes,district_field
+TX,2025 mid-decade redraw,2025-08-29,in_effect,https://en.wikipedia.org/wiki/2025%E2%80%932026_United_States_redistricting,,documentary,Special-session bill. Struck down as a racial gerrymander 2025-11-18; SCOTUS stayed that ruling 2025-12-04 (6-3) so the map is used in 2026.,
+MO,2025 mid-decade redraw,2025-09-28,blocked,https://en.wikipedia.org/wiki/2025%E2%80%932026_United_States_redistricting,,documentary,Missouri Supreme Court ordered the old map used; SCOTUS upheld 2026-09-10. cd119 is operative.,
+NC,2025 mid-decade redraw,2025-10-22,in_effect,https://en.wikipedia.org/wiki/2025%E2%80%932026_United_States_redistricting,,documentary,Legislative bill; no gubernatorial signature required. Federal panel approved 2025-11-26.,
+OH,2025 decennial re-adoption,2025-10-31,in_effect,https://en.wikipedia.org/wiki/2025%E2%80%932026_United_States_redistricting,,documentary,Unanimous Ohio Redistricting Commission vote; locked until 2032.,
+CA,2025 Proposition 50,2025-11-04,in_effect,https://en.wikipedia.org/wiki/2025%E2%80%932026_United_States_redistricting,,documentary,Voter-approved ballot measure. Upheld January 2026; SCOTUS denied the appeal 2026-02-04.,
+UT,2025 court-ordered remedial,2025-11-10,in_effect,https://en.wikipedia.org/wiki/2025%E2%80%932026_United_States_redistricting,,documentary,State district court ordered map.,
+VA,2026 referendum redraw,2026-04-21,blocked,https://en.wikipedia.org/wiki/2025%E2%80%932026_United_States_redistricting,,documentary,Referendum struck down by the Virginia Supreme Court 2026-05-08; SCOTUS denied a stay 2026-05-15. cd119 is operative.,
+FL,2026 mid-decade redraw,2026-05-04,in_effect,https://en.wikipedia.org/wiki/2025%E2%80%932026_United_States_redistricting,,documentary,Special-session bill.,
+TN,2026 mid-decade redraw,2026-05-07,in_effect,https://en.wikipedia.org/wiki/2025%E2%80%932026_United_States_redistricting,,documentary,Signed by the governor. Challenge pending — the chief district judge declined to block it 2026-05-26.,
+LA,2026 redraw,2026-05-29,in_effect,https://en.wikipedia.org/wiki/2025%E2%80%932026_United_States_redistricting,,documentary,Legislative bill; facing legal challenges but operative.,
+AL,2026 court-ordered map,2026-06-02,in_effect,https://en.wikipedia.org/wiki/2025%E2%80%932026_United_States_redistricting,,documentary,SCOTUS emergency order (unsigned 6-3) removed the prior injunction.,

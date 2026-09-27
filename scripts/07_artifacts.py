@@ -125,7 +125,7 @@ def build_districts_and_states(con, cycle):
                ST_AsGeoJSON(d.geom)               AS gj,
                i.n                                AS inc_n,
                i.party                            AS inc_party
-        FROM districts_raw d
+        FROM districts_raw_{cycle} d
         JOIN district_totals_{cycle} t USING (district_geoid)
         LEFT JOIN party p USING (district_geoid)
         LEFT JOIN inc i ON i.st = t.state_usps AND i.cd = t.cd
@@ -289,8 +289,8 @@ def main():
     con = connect(read_only=True)
     con.execute("INSTALL spatial; LOAD spatial;")
 
-    if not table_exists(con, "districts_raw"):
-        print("districts_raw missing — run scripts/05_districts.py first")
+    if not table_exists(con, f"districts_raw_{CYCLES[0]}"):
+        print("districts_raw_<cycle> missing — run scripts/05_districts.py first")
         return 1
     if not table_exists(con, "district_totals_2024"):
         print("district_totals_2024 missing — run scripts/06_aggregate.py first")
@@ -374,9 +374,9 @@ def main():
                 f"{null_vintage} features missing a vintage field")
 
         vintage_counts = dict(con.execute(f"""
-            SELECT map_status, COUNT(*) FROM district_vintage GROUP BY 1
+            SELECT map_status, COUNT(*) FROM district_vintage_{cycle} GROUP BY 1
         """).fetchall())
-        r.check(f"{cycle_s} map_status counts match district_vintage exactly",
+        r.check(f"{cycle_s} map_status counts match district_vintage_{cycle_s} exactly",
                 meta["status_counts"] == vintage_counts,
                 f"{meta['status_counts']} vs {vintage_counts}")
 

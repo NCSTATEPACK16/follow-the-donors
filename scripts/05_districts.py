@@ -41,11 +41,13 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import _districts as D
 import _fetch
-from _db import DATA, REPO, connect, raw_path
+from _db import CYCLES, DATA, REPO, connect, raw_path
 from _report import Report, fmt_int, fmt_pct
 
 CENSUS = "https://www2.census.gov/geo/tiger"
 RAW = os.path.join(DATA, "raw", "census")
+#: Enacted maps for override_applied states, one directory per state.
+OVERRIDES = os.path.join(DATA, "overrides")
 INTERIM = os.path.join(DATA, "interim")
 
 #: Same three files as spike 00c, already in the manifest and so a no-op on a
@@ -103,59 +105,48 @@ def fetch_sources(manifest):
     return paths
 
 
-def build_districts(con, cd_shp, overrides):
-    """One row per congressional district, carrying its map vintage.
+def fetch_overrides(manifest, overrides):
+    """Download each enacted map that some cycle draws. Returns {USPS: path}.
 
-    The registry is applied in Python rather than SQL because map_status() is
-    the rule the tests pin, and a CASE expression duplicating it here is
-    exactly the kind of second code path that lets a suppressed or stale value
-    leak through the one nobody updated.
+    Only states that D.draws_override() for some cycle are fetched: a blocked
+    map is never downloaded, so it cannot end up on disk and tempt anyone.
+    A zip is unpacked like the Census sources; anything else (GeoJSON, a
+    GeoPackage) is read as it arrived. The sha256 pin is v1.2 Task 2.
     """
-    con.execute(f"""
-        CREATE OR REPLACE TABLE districts_raw AS
-        SELECT STATEFP AS statefp, CD119FP AS cd, GEOID AS district_geoid,
-               NAMELSAD AS district_name, CDSESSN AS congress, geom
-        FROM ST_Read('{cd_shp}')
-    """)
-    rows = []
-    unmapped = set()
-    for statefp, geoid in con.execute(
-            "SELECT DISTINCT statefp, district_geoid FROM districts_raw"
-    ).fetchall():
-        usps = D.usps_of(statefp)
-        if usps is None:
-            unmapped.add(statefp)
+    out = {}
+    for usps in sorted(overrides):
+        if not any(D.draws_override(usps, overrides, c) for c in CYCLES):
             continue
-        ov = overrides.get(usps)
-        rows.append((
-            geoid, usps, D.map_status(usps, overrides),
-            ov.vintage if ov else "cd119 (119th Congress, Census 2025)",
-            ov.enacted_date if ov else None,
-            ov.legal_status if ov else None,
-            ov.provenance_url if ov else None,
-            ov.provenance_kind if ov else None,
-            ov.notes if ov else None,
-        ))
-    con.execute("""
-        CREATE OR REPLACE TABLE district_vintage (
-            district_geoid VARCHAR, state_usps VARCHAR, map_status VARCHAR,
-            map_vintage VARCHAR, enacted_date VARCHAR, legal_status VARCHAR,
-            provenance_url VARCHAR, provenance_kind VARCHAR, notes VARCHAR)
-    """)
-    con.executemany(
-        "INSERT INTO district_vintage VALUES (?,?,?,?,?,?,?,?,?)", rows)
-    con.execute("""
-        CREATE OR REPLACE TABLE districts AS
-        SELECT r.statefp, r.cd, r.district_geoid, r.district_name, r.congress,
-               v.state_usps, v.map_status, v.map_vintage, v.enacted_date,
-               v.legal_status, v.provenance_url, v.provenance_kind, v.notes
-        FROM districts_raw r
-        JOIN district_vintage v USING (district_geoid)
-    """)
-    return unmapped
+        ov = overrides[usps]
+        odir = os.path.join(OVERRIDES, usps)
+        os.makedirs(odir, exist_ok=True)
+        name = os.path.basename(ov.geometry_source.split("?")[0]) or "enacted"
+        dest = os.path.join(odir, name)
+        _fetch.download(ov.geometry_source, dest, manifest, f"override_{usps}")
+        manifest.save()
+        if dest.lower().endswith(".zip"):
+            members = _fetch.extract_all_members(
+                dest, odir, [".shp", ".dbf", ".shx", ".prj", ".cpg"])
+            shp = [m for m in members if m.endswith(".shp")]
+            if len(shp) != 1:
+                raise RuntimeError(
+                    f"{usps}: {name} holds {len(shp)} .shp files; name the "
+                    "one to draw rather than let the pipeline pick")
+            dest = shp[0]
+        out[usps] = dest
+    return out
 
 
-def build_crosswalk(con, zcta_shp):
+def derivation(overrides):
+    """The crosswalk's `derivation`, naming every enacted map it intersected.
+    The crosswalk is built on the governing map, so once a state's override
+    is drawn its ZIPs were NOT intersected against cd119 alone."""
+    drawn = [s for s in sorted(overrides)
+             if D.draws_override(s, overrides, max(CYCLES))]
+    return DERIVATION + (f" + enacted:{','.join(drawn)}" if drawn else "")
+
+
+def build_crosswalk(con, zcta_shp, how=DERIVATION):
     """ZCTA x district intersection, sliver-filtered, plus the ZIP3 index."""
     con.execute(f"""
         CREATE OR REPLACE TABLE zcta AS
@@ -182,7 +173,7 @@ def build_crosswalk(con, zcta_shp):
                s.rk = 1 AS is_primary,
                d.state_usps, d.map_status,
                '{D.RESOLVED_ZCTA}' AS resolution,
-               '{DERIVATION}' AS derivation
+               '{how}' AS derivation
         FROM scored s JOIN districts d USING (district_geoid)
         -- The dominant district is kept unconditionally so the sliver filter
         -- can never orphan a ZCTA; every genuine co-occupant clears the bar.
@@ -248,14 +239,16 @@ def main():
     overrides = D.load_overrides()          # raises on a malformed row
     gaps = D.sourcing_gaps(overrides)
     paths = fetch_sources(manifest)
+    override_files = fetch_overrides(manifest, overrides)
 
     con = connect()
     con.execute("INSTALL spatial; LOAD spatial;")
 
     print("  districts…")
-    unmapped = build_districts(con, paths["cd119_500k"], overrides)
+    unmapped = D.build_districts(con, paths["cd119_500k"], overrides,
+                                 CYCLES, override_files)
     print("  intersecting ZCTAs against districts…")
-    build_crosswalk(con, paths["zcta520_500k"])
+    build_crosswalk(con, paths["zcta520_500k"], derivation(overrides))
 
     features = con.execute("SELECT count(*) FROM districts").fetchone()[0]
     by_status = con.execute("""
@@ -263,6 +256,21 @@ def main():
         GROUP BY map_status ORDER BY 2 DESC
     """).fetchall()
     superseded = dict(by_status).get(D.MAP_SUPERSEDED, 0)
+    by_cycle = {c: dict(con.execute(f"""
+        SELECT map_status, count(*) FROM districts_{c} GROUP BY 1
+    """).fetchall()) for c in CYCLES}
+    cd119_n = con.execute("SELECT count(*) FROM cd119_raw").fetchone()[0]
+    # The label and the pixels, compared: an override_applied district must
+    # be drawn from the enacted map, and nothing else may be.
+    mislabelled = {c: con.execute(f"""
+        SELECT count(*) FROM districts_{c}
+        WHERE (map_status = '{D.MAP_OVERRIDE_APPLIED}') <> (congress = 'override')
+    """).fetchone()[0] for c in CYCLES}
+    stray = {c: con.execute(f"""
+        SELECT count(*) FROM districts_raw_{c} WHERE congress = 'override'
+    """).fetchone()[0] for c in CYCLES if c not in D.OVERRIDE_CYCLES}
+    counts = {c: con.execute(f"SELECT count(*) FROM districts_raw_{c}").fetchone()[0]
+              for c in CYCLES}
 
     zcta_total = con.execute("SELECT count(*) FROM zcta").fetchone()[0]
     resolved = con.execute(
@@ -281,6 +289,7 @@ def main():
     # is the attribute table, which is what stage 06 aggregates against.
     for select, name in (
             ("SELECT * FROM districts", "districts"),
+            *((f"SELECT * FROM districts_{c}", f"districts_{c}") for c in CYCLES),
             ("SELECT * FROM zip_districts", "zip_district_crosswalk"),
             ("SELECT * FROM zip3_districts", "zip3_district_index")):
         out = os.path.join(INTERIM, name + ".parquet")
@@ -302,6 +311,15 @@ def main():
         "never reported as a current one.")
     r.table(["map_status", "districts"],
             [(f"`{s}`", fmt_int(n)) for s, n in by_status])
+    r.para(
+        "That table is the governing map. Each cycle has its own: an enacted "
+        "map is drawn only for the cycles it governs "
+        f"({', '.join(str(c) for c in D.OVERRIDE_CYCLES)}), and every other "
+        "cycle is drawn on cd119, the lines it was contested on.")
+    statuses = sorted({s for m in by_cycle.values() for s in m})
+    r.table(["map_status"] + [str(c) for c in CYCLES],
+            [(f"`{s}`", *(fmt_int(by_cycle[c].get(s, 0)) for c in CYCLES))
+             for s in statuses])
     r.para(
         f"**{fmt_int(superseded)} districts ({fmt_pct(superseded / features)}) "
         "are drawn from a map that is no longer the law**, because their state "
@@ -369,6 +387,15 @@ def main():
                     SELECT unnest(?))""",
                 [D.MAP_CURRENT, list(overrides)]).fetchone()[0] == 0,
             "a redrawn state never renders as cd119_current")
+    r.check("override_applied if and only if drawn from the enacted map",
+            not any(mislabelled.values()),
+            ", ".join(f"{c}: {n} mismatched" for c, n in mislabelled.items()))
+    r.check("no enacted map drawn outside the cycles it governs",
+            not any(stray.values()),
+            ", ".join(f"{c}: {n}" for c, n in stray.items()) or "no such cycle")
+    r.check("every cycle draws as many districts as cd119",
+            all(n == cd119_n for n in counts.values()),
+            ", ".join(f"{c}: {n}" for c, n in counts.items()) + f" (cd119 {cd119_n})")
     r.check("ZCTA resolution rate", resolved_share >= MIN_ZCTA_RESOLVED,
             f"{fmt_pct(resolved_share)} (minimum {fmt_pct(MIN_ZCTA_RESOLVED)})")
     r.check("split-ZIP share within expected band",

@@ -10,12 +10,9 @@ and what to do next, in order.**
   layout, the Netlify guard, the picking fix). Also merged: stage 07 re-run
   with `MIN_NAMED_INCUMBENTS` ratcheted to 414 (PR #4), and the riso revamp
   with real drum inks, a Senate plate and a printed texture (PR #5).
-- **Open: PR #6** (https://github.com/NCSTATEPACK16/follow-the-donors/pull/6),
-  branch `claude/brave-feynman-ahbiv5`. It responds to the user's note on #5
-  about California: the dots were too big for small districts, the legend
-  didn't match the map, the plate didn't visibly move, and there was no way
-  to zoom inside a state. **Check whether it has merged before doing
-  anything else.**
+- **PR #6 merged** (2026-09-27): riso sizing, legend at the map's ruling,
+  hand zoom. Branch `claude/brave-feynman-ahbiv5` was restarted from `main`
+  and now carries v1.2 Task 1 (see item 3).
 
 ### What PR #6 changed, and the measurement behind each change
 
@@ -41,7 +38,7 @@ was an interpretation, and the PR says so.
 
 ## To do, in order (the "before showing people" list given to the user)
 
-### 1. Look at PR #6 on real data, then merge
+### 1. Look at PR #6 (merged) on real data
 
 On the machine with the data: `cd web && npm ci && npm run build`, confirm
 `web/dist/data` is real, then run `node web/check.mjs`. **All green**, or
@@ -60,7 +57,17 @@ deployment). After that, every merge to `main` deploys. Open the live site
 and confirm there's **no "SYNTHETIC FIXTURE" banner** and the numbers match
 `reports/07_artifacts.md`. Run `--verify` after the deploy.
 
-### 3. The stale-map problem: v1.2 Task 1 first
+### 3. The stale-map problem: Task 1 done, Task 2 next (needs network)
+
+**Task 1 landed 2026-09-27** (overrides can carry geometry; 2026 only, by
+the user's decision). Nothing in the data changes until a `geometry_source`
+is filled in, so on the data machine a `05 → 06 → 07 → 09 → 10` re-run must
+produce byte-identical artifacts — diff them; that is the check that the
+per-cycle split changed nothing. **Task 2** sources the nine maps and needs
+network (census.gov, legislatures). Each row needs `provenance_kind =
+enacting_authority` and a `district_field`, and the loader refuses otherwise.
+
+The text below is the original item, kept for context.
 
 173 of 441 districts (39.23%) are drawn from a map that is no longer the law,
 and in California it is all of them. This is the first thing an informed

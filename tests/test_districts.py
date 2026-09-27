@@ -226,3 +226,187 @@ def test_the_district_of_columbia_and_territories_are_covered():
     voting districts. A missing entry would drop them from every join."""
     for fips in ("11", "72", "78", "66", "69", "60"):
         assert D.usps_of(fips) is not None, fips
+
+
+# --- an override may carry geometry, and only a map that is law is drawn ----
+#
+# v1.2 Task 1. Until then map_status() said override_applied as soon as
+# geometry_source was filled in, while stage 05 drew cd119 regardless: one
+# CSV cell away from telling a visitor we drew a map we had not.
+
+def test_documentary_provenance_cannot_carry_geometry(tmp_path):
+    """Documentary is good enough to SAY a state redrew, not to DRAW it."""
+    path = write_registry(
+        tmp_path, HEADER.replace("notes\n", "notes,district_field\n") +
+        "UT,2025 remedial,2025-11-10,in_effect,https://example.gov/ut,"
+        "https://example.gov/ut.zip,documentary,,DISTRICT\n")
+    with pytest.raises(ValueError, match="enacting_authority"):
+        D.load_overrides(path)
+
+
+def test_geometry_without_a_district_field_raises(tmp_path):
+    """Which attribute holds the district number is read off the enacted
+    file by a person, never guessed from whatever column looks numeric."""
+    path = write_registry(
+        tmp_path, HEADER +
+        "UT,2025 remedial,2025-11-10,in_effect,https://example.gov/ut,"
+        "https://example.gov/ut.zip,enacting_authority,\n")
+    with pytest.raises(ValueError, match="district_field"):
+        D.load_overrides(path)
+
+
+def test_an_enacting_authority_override_with_its_field_loads(tmp_path):
+    path = write_registry(
+        tmp_path, HEADER.replace("notes\n", "notes,district_field\n") +
+        "UT,2025 remedial,2025-11-10,in_effect,https://example.gov/ut,"
+        "https://example.gov/ut.zip,enacting_authority,,DISTRICT\n")
+    ov = D.load_overrides(path)["UT"]
+    assert ov.district_field == "DISTRICT"
+
+
+@pytest.mark.parametrize("raw, want", [
+    ("1", "01"), ("01", "01"), (1, "01"), ("12", "12"), (" 7 ", "07"),
+    ("District 12", "12"), ("district 3", "03"), ("CD 4", "04"),
+    ("0", "00"), ("00", "00"), ("AL", "00"), ("At-Large", "00"),
+])
+def test_normalise_cd(raw, want):
+    assert D.normalise_cd(raw) == want
+
+
+@pytest.mark.parametrize("raw", [
+    "", None, "1A", "District", "123", "-1", "1.0", "one", 1.0, True,
+])
+def test_normalise_cd_refuses_to_guess(raw):
+    """A legislature types what it likes. Anything this cannot read with
+    certainty stops the build rather than landing money on the wrong seat."""
+    with pytest.raises(ValueError):
+        D.normalise_cd(raw)
+
+
+def _applied(state="UT", status="in_effect"):
+    return {state: D.Override(state, "2025 remedial", "2025-11-10", status,
+                              "https://example.gov/ut", "ut.zip",
+                              "enacting_authority", "", "DISTRICT")}
+
+
+def test_an_applied_override_is_drawn_for_2026_only():
+    """2024 was contested on cd119, so it is drawn on cd119 — and a state
+    whose map has since moved says so, exactly as it did before overrides
+    could carry geometry."""
+    ov = _applied()
+    assert D.map_status("UT", ov, 2026) == D.MAP_OVERRIDE_APPLIED
+    assert D.map_status("UT", ov, 2024) == D.MAP_SUPERSEDED
+    assert D.draws_override("UT", ov, 2026)
+    assert not D.draws_override("UT", ov, 2024)
+
+
+def test_a_blocked_map_on_disk_is_drawn_in_no_cycle():
+    """The MO/VA guard, per cycle."""
+    for status in ("blocked", "in_litigation"):
+        ov = _applied("MO", status)
+        for cycle in (2024, 2026):
+            assert D.map_status("MO", ov, cycle) == D.MAP_CONTESTED
+            assert not D.draws_override("MO", ov, cycle)
+
+
+def test_map_status_without_a_cycle_is_the_governing_one():
+    assert D.map_status("UT", _applied()) == D.MAP_OVERRIDE_APPLIED
+
+
+# --- the geometry swap itself, on a DuckDB fixture --------------------------
+
+@pytest.fixture
+def spatial_con():
+    duckdb = pytest.importorskip("duckdb")
+    con = duckdb.connect()
+    try:
+        con.execute("INSTALL spatial; LOAD spatial;")
+    except Exception as e:  # no network for the extension: CI runs this
+        pytest.skip(f"duckdb spatial unavailable: {e}")
+    yield con
+    con.close()
+
+
+def _square(x, y, s=1.0):
+    return {"type": "Polygon", "coordinates": [[
+        [x, y], [x, y + s], [x + s, y + s], [x + s, y], [x, y]]]}
+
+
+def _write_fc(path, feats):
+    import json
+    path.write_text(json.dumps({
+        "type": "FeatureCollection",
+        "features": [{"type": "Feature", "properties": p, "geometry": g}
+                     for p, g in feats]}))
+    return str(path)
+
+
+@pytest.fixture
+def ut_files(tmp_path):
+    """UT (FIPS 49) with two cd119 districts, and an enacted map with two
+    DIFFERENT districts whose numbers are typed the way a legislature
+    types them."""
+    cd = _write_fc(tmp_path / "cd119.geojson", [
+        ({"STATEFP": "49", "CD119FP": f"0{i}", "GEOID": f"490{i}",
+          "NAMELSAD": f"Congressional District {i}", "CDSESSN": "119"},
+         _square(i, 0))
+        for i in (1, 2)])
+    enacted = _write_fc(tmp_path / "ut_2025.geojson", [
+        ({"DISTRICT": f"District {i}"}, _square(10 + i, 10))
+        for i in (1, 2)])
+    return cd, enacted
+
+
+def _geoids_x(con, table):
+    return con.execute(f"""
+        SELECT district_geoid, round(ST_XMin(geom)) FROM {table}
+        ORDER BY 1""").fetchall()
+
+
+def test_the_enacted_map_is_drawn_for_2026_and_cd119_for_2024(spatial_con, ut_files):
+    cd, enacted = ut_files
+    D.build_districts(spatial_con, cd, _applied(), (2024, 2026), {"UT": enacted})
+    assert _geoids_x(spatial_con, "districts_raw_2026") == [("4901", 11), ("4902", 12)]
+    assert _geoids_x(spatial_con, "districts_raw_2024") == [("4901", 1), ("4902", 2)]
+    status = dict(spatial_con.execute(
+        "SELECT '2026', any_value(map_status) FROM districts_2026 UNION ALL "
+        "SELECT '2024', any_value(map_status) FROM districts_2024").fetchall())
+    assert status == {"2026": D.MAP_OVERRIDE_APPLIED, "2024": D.MAP_SUPERSEDED}
+    # The unsuffixed names answer for the map that governs now.
+    assert _geoids_x(spatial_con, "districts_raw") == [("4901", 11), ("4902", 12)]
+
+
+def test_a_blocked_map_on_disk_changes_no_pixel(spatial_con, ut_files):
+    cd, enacted = ut_files
+    D.build_districts(spatial_con, cd, _applied(status="blocked"), (2024, 2026),
+                      {"UT": enacted})
+    for cycle in (2024, 2026):
+        assert _geoids_x(spatial_con, f"districts_raw_{cycle}") == [("4901", 1), ("4902", 2)]
+        assert {s for (s,) in spatial_con.execute(
+            f"SELECT DISTINCT map_status FROM districts_{cycle}").fetchall()} \
+            == {D.MAP_CONTESTED}
+
+
+def test_an_enacted_map_with_the_wrong_seat_count_raises(spatial_con, ut_files, tmp_path):
+    """Apportionment is fixed until 2032: a count mismatch is the wrong
+    file, not a new map."""
+    cd, _ = ut_files
+    three = _write_fc(tmp_path / "ut_three.geojson", [
+        ({"DISTRICT": str(i)}, _square(10 + i, 10)) for i in (1, 2, 3)])
+    with pytest.raises(ValueError, match="districts"):
+        D.build_districts(spatial_con, cd, _applied(), (2024, 2026), {"UT": three})
+
+
+def test_an_enacted_map_numbering_a_seat_twice_raises(spatial_con, ut_files, tmp_path):
+    cd, _ = ut_files
+    dup = _write_fc(tmp_path / "ut_dup.geojson", [
+        ({"DISTRICT": "1"}, _square(11, 10)), ({"DISTRICT": "01"}, _square(12, 10))])
+    with pytest.raises(ValueError, match="twice"):
+        D.build_districts(spatial_con, cd, _applied(), (2024, 2026), {"UT": dup})
+
+
+def test_an_applied_override_with_no_file_raises(spatial_con, ut_files):
+    """Never label a state override_applied and fall back to drawing cd119."""
+    cd, _ = ut_files
+    with pytest.raises(ValueError, match="UT"):
+        D.build_districts(spatial_con, cd, _applied(), (2024, 2026), {})
