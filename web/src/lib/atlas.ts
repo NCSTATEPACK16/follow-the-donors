@@ -190,7 +190,7 @@ export function renderOffmap(
     <div class="offmap-chips">${offmap.map((f) => {
       const p = f.properties
       return `<button class="offchip" data-geoid="${p.geoid}"
-        style="--ink:${step(p.pac_cents)}">
+        style="--chip-ink:${step(p.pac_cents)}">
         <span class="offchip-ink"></span>
         <span class="offchip-id">${p.state}</span>
         <span class="offchip-amt">${usdCompact(p.pac_cents)}</span>

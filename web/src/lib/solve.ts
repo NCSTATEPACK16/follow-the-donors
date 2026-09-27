@@ -14,7 +14,7 @@
  * OKLab is Björn Ottosson's, from linear sRGB. The dataviz validator reports
  * the same L and ΔE (ΔE here is Euclidean OKLab × 100, its convention).
  */
-import { plateTone, seqWeights, splitInk, type HexColor } from "./inks"
+import { pathWeights, plateTone, seqWeights, splitInk, type HexColor } from "./inks"
 
 const lin = (v: number): number =>
   v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)
@@ -94,6 +94,37 @@ export function solveTable(
       const mid = (lo + hi) / 2
       const L = okL(seqTone(paper, inks, mid, t, dark))
       if ((L < target) === rising) lo = mid; else hi = mid
+    }
+    out.push(Math.round(((lo + hi) / 2) * 1e4) / 1e4)
+  }
+  out.push(ceil)
+  return out
+}
+
+/**
+ * The same solve for an INK-PATH system (inks.ts pathWeights): step i prints
+ * the plate mix at path[i], and its composite coverage is bisected so the six
+ * printed tones are equally spaced in OKLab L between the floor tone and the
+ * ceiling tone. Middle steps are searched only up to `ceil` — the composite
+ * cap is load-bearing (inks.ts COVERAGE_CEIL) — so a path that cannot reach
+ * its target lightness saturates there, and the ΔL test fails, rather than
+ * quietly printing past the cap.
+ */
+export function solvePathTable(
+  paper: HexColor, inks: HexColor[], path: number[], floor: number, ceil: number, dark: boolean,
+): number[] {
+  const n = path.length
+  const tone = (C: number, i: number) => plateTone(paper, inks, splitInk(C, pathWeights(path[i])), dark)
+  const L0 = okL(tone(floor, 0))
+  const L1 = okL(tone(ceil, n - 1))
+  const out = [floor]
+  for (let i = 1; i < n - 1; i++) {
+    const target = L0 + (L1 - L0) * i / (n - 1)
+    let lo = 0, hi = ceil
+    const rising = okL(tone(hi, i)) > okL(tone(lo, i))
+    for (let k = 0; k < 60; k++) {
+      const mid = (lo + hi) / 2
+      if ((okL(tone(mid, i)) < target) === rising) lo = mid; else hi = mid
     }
     out.push(Math.round(((lo + hi) / 2) * 1e4) / 1e4)
   }

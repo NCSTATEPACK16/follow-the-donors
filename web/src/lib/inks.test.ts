@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest"
-import { D, PARTY, coverageAt, derivedRamp, partyInkOf, partyRamp, partyStep, splitInk } from "./inks"
-import { deltaE, hueSweep, okL, solveTable } from "./solve"
+import {
+  D, PARTY, S, coverageAt, derivedRamp, partyInkOf, partyRamp, partyStep, pathWeights, platesOf, splitInk,
+} from "./inks"
+import { deltaE, hueSweep, okL, solvePathTable } from "./solve"
 
 describe("derivedRamp", () => {
   it("returns the six tones the plates print, every adjacent pair distinct", () => {
@@ -52,21 +54,47 @@ describe("coverageAt", () => {
   })
 })
 
-describe("D's step tables are SOLVED, not typed", () => {
-  // The table is a consequence of the plates: the four middle coverages are
-  // whatever spaces the six printed tones equally in lightness. A plate ink
-  // changed without re-running the solve would leave a table that no longer
-  // does that, and nothing else would notice.
-  it("light table is solveTable's output for the light plates", () => {
-    const P = D.plates!
-    expect(solveTable(D.paper, [P.first, P.second, P.third], 0.34, 0.88, false))
-      .toEqual(D.table)
+describe("the step tables are SOLVED, not typed", () => {
+  // Each table is a consequence of its plates and ink path: the four middle
+  // coverages are whatever spaces the six printed tones equally in
+  // lightness. A plate or path changed without re-running the solve would
+  // leave a table that no longer does that, and nothing else would notice.
+  for (const sys of [D, S]) for (const dark of [false, true]) {
+    it(`${sys.name} ${dark ? "dark" : "light"} table is solvePathTable's output`, () => {
+      const table = (dark ? sys.tableDark : sys.table)!
+      const path = (dark ? sys.pathDark : sys.path)!
+      expect(solvePathTable(dark ? sys.paperDark : sys.paper, platesOf(sys, dark), path,
+        table[0], 0.88, dark)).toEqual(table)
+    })
+  }
+  it("no step prints past the composite cap", () => {
+    for (const sys of [D, S]) for (const t of [sys.table!, sys.tableDark!])
+      for (const c of t) expect(c).toBeLessThanOrEqual(0.88)
   })
-  it("dark table is solveTable's output for the dark plates", () => {
-    const P = D.platesDark!
-    expect(solveTable(D.paperDark, [P.first, P.second, P.third], 0.34, 0.88, true))
-      .toEqual(D.tableDark)
+  it("an ink-path step overprints at most two neighbouring plates", () => {
+    for (const sys of [D, S]) for (const p of [...sys.path!, ...sys.pathDark!]) {
+      const w = pathWeights(p)
+      expect(w[0] > 0 && w[2] > 0).toBe(false)
+    }
   })
+})
+
+describe("the Senate plate is its own map", () => {
+  for (const dark of [false, true]) {
+    const stock = dark ? "dark" : "light"
+    const ramp = derivedRamp(S, dark)
+    const L = ramp.map(okL)
+    it(`${stock}: monotone, and every step clears the 0.06 lightness gate`, () => {
+      for (let i = 1; i < L.length; i++) {
+        expect(dark ? L[i] > L[i - 1] : L[i] < L[i - 1]).toBe(true)
+        expect(Math.abs(L[i] - L[i - 1])).toBeGreaterThanOrEqual(0.06)
+      }
+    })
+    it(`${stock}: shares no ink with the House plate`, () => {
+      const house = new Set(platesOf(D, dark))
+      for (const ink of platesOf(S, dark)) expect(house.has(ink)).toBe(false)
+    })
+  }
 })
 
 describe("D's printed ramp", () => {
@@ -99,8 +127,8 @@ describe("D's printed ramp", () => {
     })
 
     it(`${stock}: the hue sweep is broad — the broadening is asserted, not claimed`, () => {
-      // Was 66° light / 47° dark. The floor is 110°, under the measured 127°
-      // and 138°, so a re-solve can move a little without a false alarm but a
+      // Was 66° light / 47° dark. The floor is 110°, under the measured 160°
+      // and 138° (2026-09-27 Riso plates), so a re-solve can move a little without a false alarm but a
       // quiet return to a one-family green ramp cannot.
       expect(hueSweep(ramp)).toBeGreaterThanOrEqual(110)
     })

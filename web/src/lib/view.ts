@@ -224,9 +224,25 @@ export function renderCycleBand(el: HTMLElement, meta: { mid_cycle?: string; cyc
  * not what it appears to be*. On the district layer it is a superseded
  * boundary; here it is money banked for an election that is not this one.
  */
-export function renderSenateLegend(el: HTMLElement, senate: SenateArtifact) {
+/** Six labels for five quantile breaks: "< a", "a–b", …, "> e". */
+export function breakLabels(breaks: number[]): string[] {
+  if (!breaks.length) return []
+  const k = breaks.map((c) => usdCompact(c))
+  return [`< ${k[0]}`, ...k.slice(1).map((v, i) => `${k[i]}–${v}`), `> ${k[k.length - 1]}`]
+}
+
+export function renderSenateLegend(el: HTMLElement, senate: SenateArtifact, breaks: number[] = []) {
+  // The Senate prints its own inks (inks.ts S), so it gets its own key: six
+  // chips the caller paints with the Senate plates, labelled off the Senate
+  // quantile breaks — never the House's.
+  const labels = breakLabels(breaks)
   el.innerHTML = `
     <div class="legend-title">Senate PAC money, ${senate.cycle} cycle</div>
+    ${labels.length ? `<div class="legend-ramp">${labels.map((l, i) => `
+      <div class="legend-step">
+        <span class="legend-chip" data-cov="${(i + 1) / 6}"></span>
+        <span class="legend-lab">${l}</span>
+      </div>`).join("")}</div>` : ""}
     <div class="sen-stats">
       <div class="sen-stat">
         <span class="sen-num">${usdCompact(senate.total_cents)}</span>

@@ -66,17 +66,54 @@ void main() {
   gl_Position = vec4(c.x, -c.y, 0.0, 1.0);
 }`
 
-const FRAG = `#version 300 es
-precision highp float;
-in vec4 vCov; in float vCell; in float vPhase;
-uniform vec3 uPaper;
-uniform vec3 uInk[${MAX_PLATES}];
-uniform float uAng[${MAX_PLATES}];
-uniform vec2 uDrift[${MAX_PLATES}];
-uniform float uLay[${MAX_PLATES}];
-uniform float uDpr, uDark, uCellScale, uGain, uNPlates;
-uniform float uTime, uPhaseAmp;
-out vec4 outColor;
+/**
+ * THE RISO TEXTURE (2026-09-27), three effects, all FIXED TO THE SHEET —
+ * none of them moves, so reduced motion is untouched by any of them.
+ *
+ * MISREGISTRATION. Each drum lays its whole plate a hair off the others, so
+ * a district's inks do not quite sit inside its keyline: a thin fringe of
+ * one ink shows along one edge. The breathing drift and per-district wander
+ * cannot show this — they slide the SCREEN inside a fixed polygon, which
+ * the eye cannot see — so each plate is now drawn in its own pass with its
+ * GEOMETRY offset (see the multi-pass renderer below). Plate 0 is the key
+ * and holds register; the others sit ~1px off in different directions.
+ * CSS px, and constant across zoom: a press's error is on the paper, not in
+ * the screen ruling.
+ *
+ * GRAIN SCREEN and PAPER TOOTH: see plate() and tooth() in the shader.
+ */
+export const MISREGISTRATION: ReadonlyArray<readonly [number, number]> = [
+  [0, 0], [0.85, -0.55], [-0.6, 0.8], [0.45, 0.45],
+]
+/** How far toward a stochastic screen a light tint goes (0 = clean dots). */
+export const GRAIN_MIX = 0.6
+/** How much of a plate's ink the paper's deepest tooth refuses. */
+export const SKIP = 0.28
+
+/* Shared by the single-pass fallback and the per-plate pass: the dot,
+   the grain, the wander, and the two colour models' per-ink terms. */
+const SHARED = `
+/* Fixed-to-the-sheet noise: the paper's tooth, and the grain screen's
+   thresholds. Hash, not a texture, so there is nothing to load. */
+float hash21(vec2 p) {
+  p = fract(p * vec2(123.34, 456.21));
+  p += dot(p, p + 45.32);
+  return fract(p.x * p.y);
+}
+float vnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash21(i), hash21(i + vec2(1.0, 0.0)), f.x),
+             mix(hash21(i + vec2(0.0, 1.0)), hash21(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+/* PAPER TOOTH, 0..1, in CSS px so it keeps its size on any screen: a coarse
+   fibre field and a fine one. Uncoated riso stock has tooth, and where it
+   dips the drum's ink does not reach — see SKIP in the pass shader. */
+float tooth(vec2 frag) {
+  vec2 p = frag / uDpr;
+  return 0.6 * vnoise(p / 1.7) + 0.4 * vnoise(p / 0.6 + 17.0);
+}
+const float GRAIN_MIX = ${GRAIN_MIX.toFixed(2)};
 
 /* This district's own wander for plate i, in CSS px.
  *
@@ -113,7 +150,7 @@ vec2 wander(int i) {
  *    plate slides relative to the paper the way a real plate does, rather
  *    than the screen shearing inside a stationary plate.
  */
-float plate(vec2 frag, float angle, float cellPx, float cov, vec2 drift, float gain) {
+float plate(vec2 frag, float angle, float cellPx, float cov, vec2 drift, float gain, float seed) {
   if (cov <= 0.0) return 0.0;
   float s = sin(angle), c = cos(angle);
   vec2 r = mat2(c, -s, s, c) * (frag + drift * uDpr);
@@ -142,7 +179,20 @@ float plate(vec2 frag, float angle, float cellPx, float cov, vec2 drift, float g
      spatial movement anywhere on the page. */
   float radius = sqrt(cov / 3.14159265) * gain;
   float aa = length(vec2(dFdx(d), dFdy(d)));
-  return 1.0 - smoothstep(radius - aa, radius + aa, d);
+  float am = 1.0 - smoothstep(radius - aa, radius + aa, d);
+  /* THE GRAIN SCREEN (2026-09-27). A riso master is burned by a thermal
+     head, and at a light tint its dots break up into grain rather than
+     printing as clean circles. Below ~45% coverage the round dot is blended
+     toward a stochastic screen: each ~0.8px grain inks where a fixed hash
+     falls under the coverage, so the MEAN ink is still exactly cov (the
+     hash is uniform on 0..1) and the tone the solver set is kept. Fixed to
+     the sheet — the grain never moves, whatever the motion setting. */
+  float w = GRAIN_MIX * (1.0 - smoothstep(0.10, 0.45, cov));
+  if (w > 0.0) {
+    float n = hash21(floor(frag / (uDpr * 0.8)) + seed * 37.0);
+    am = mix(am, step(n, cov * gain), w);
+  }
+  return am;
 }
 
 /* Kubelka-Munk, single constant, per channel.
@@ -153,6 +203,20 @@ float plate(vec2 frag, float angle, float cellPx, float cov, vec2 drift, float g
 vec3 ks(vec3 r) { r = clamp(r, 0.004, 0.996); return (1.0 - r) * (1.0 - r) / (2.0 * r); }
 vec3 unks(vec3 k) { return 1.0 + k - sqrt(k * k + 2.0 * k); }
 
+`
+
+const FRAG = `#version 300 es
+precision highp float;
+uniform vec3 uPaper;
+uniform vec3 uInk[${MAX_PLATES}];
+uniform float uAng[${MAX_PLATES}];
+uniform vec2 uDrift[${MAX_PLATES}];
+uniform float uLay[${MAX_PLATES}];
+uniform float uDpr, uDark, uCellScale, uGain, uNPlates;
+uniform float uTime, uPhaseAmp;
+in vec4 vCov; in float vCell; in float vPhase;
+out vec4 outColor;
+${SHARED}
 void main() {
   vec2 frag = gl_FragCoord.xy;
   float cov[${MAX_PLATES}];
@@ -175,18 +239,97 @@ void main() {
     col = uPaper;
     for (int i = 0; i < ${MAX_PLATES}; i++) {
       if (float(i) >= uNPlates) break;
-      float a = plate(frag, uAng[i], vCell, cov[i] * uLay[i], uDrift[i] + wander(i), uGain);
+      float a = plate(frag, uAng[i], vCell, cov[i] * uLay[i], uDrift[i] + wander(i), uGain, float(i));
       col += a * uInk[i] * 0.95;
     }
   } else {
     vec3 k = ks(uPaper);
     for (int i = 0; i < ${MAX_PLATES}; i++) {
       if (float(i) >= uNPlates) break;
-      float a = plate(frag, uAng[i], vCell, cov[i] * uLay[i], uDrift[i] + wander(i), uGain);
+      float a = plate(frag, uAng[i], vCell, cov[i] * uLay[i], uDrift[i] + wander(i), uGain, float(i));
       k += a * ks(uInk[i]) * 1.35;
     }
     col = unks(k);
   }
+  outColor = vec4(clamp(col, 0.0, 1.0), 1.0);
+}`
+
+/* ------------------------------------------------------------------ */
+/*  The multi-pass press: one pass per plate, then a composite         */
+/* ------------------------------------------------------------------ */
+
+/* Each plate is drawn on its own with its geometry offset by uOff, into a
+   float buffer that SUMS what the plates contribute. Both colour models are
+   linear in that sum — Kubelka-Munk absorption (K/S) adds per ink, and on
+   the dark stock light adds — so summing per plate and resolving once is
+   exactly the single-pass result with the plates allowed out of register. */
+const PASS_VERT = `#version 300 es
+in vec2 aPos; in vec4 aCov; in float aCell; in float aPhase;
+uniform vec2 uRes, uOff;
+uniform highp int uPlate;
+out float vCovP; out float vCell; out float vPhase;
+void main() {
+  vCovP = aCov[uPlate]; vCell = aCell; vPhase = aPhase;
+  vec2 c = ((aPos + uOff) / uRes) * 2.0 - 1.0;
+  gl_Position = vec4(c.x, -c.y, 0.0, 1.0);
+}`
+
+const PASS_FRAG = `#version 300 es
+precision highp float;
+uniform vec3 uPaper;
+uniform vec3 uInk[${MAX_PLATES}];
+uniform float uAng[${MAX_PLATES}];
+uniform vec2 uDrift[${MAX_PLATES}];
+uniform float uLay[${MAX_PLATES}];
+uniform float uDpr, uDark, uCellScale, uGain, uNPlates;
+uniform float uTime, uPhaseAmp;
+uniform highp int uPlate;
+in float vCovP; in float vCell; in float vPhase;
+out vec4 outColor;
+${SHARED}
+const float SKIP = ${SKIP.toFixed(2)};
+void main() {
+  vec2 frag = gl_FragCoord.xy;
+  int i = uPlate;
+  float a = plate(frag, uAng[i], vCell, vCovP * uLay[i], uDrift[i] + wander(i), uGain, float(i));
+  a *= 1.0 - SKIP * smoothstep(0.62, 0.9, tooth(frag));
+  vec3 w = uDark > 0.5 ? uInk[i] * 0.95 : ks(uInk[i]) * 1.35;
+  outColor = vec4(a * w, 1.0);
+}`
+
+const COMP_VERT = `#version 300 es
+void main() {
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`
+
+const COMP_FRAG = `#version 300 es
+precision highp float;
+uniform sampler2D uAcc;
+uniform vec3 uPaper;
+uniform float uDpr, uDark;
+out vec4 outColor;
+float hash21(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+float vnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash21(i), hash21(i + vec2(1.0, 0.0)), f.x),
+             mix(hash21(i + vec2(0.0, 1.0)), hash21(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+vec3 ks(vec3 r) { r = clamp(r, 0.004, 0.996); return (1.0 - r) * (1.0 - r) / (2.0 * r); }
+vec3 unks(vec3 k) { return 1.0 + k - sqrt(k * k + 2.0 * k); }
+void main() {
+  vec2 frag = gl_FragCoord.xy, p = frag / uDpr;
+  vec3 acc = texelFetch(uAcc, ivec2(frag), 0).rgb;
+  /* PAPER GRAIN: the stock itself is not flat. A fine tooth plus long,
+     faint fibres running with the grain of the sheet. Small — about 2.5% of
+     the paper's reflectance — so it reads as stock, not as a pattern. */
+  float g = 0.6 * vnoise(p / 1.7) + 0.4 * vnoise(p / 0.6 + 17.0);
+  float fib = vnoise(vec2(p.x / 14.0, p.y / 0.9) + 5.0);
+  float grain = (g - 0.5) * 0.05 + (fib - 0.5) * 0.02;
+  vec3 col;
+  if (uDark > 0.5) col = uPaper + grain * 0.35 + acc;
+  else col = unks(ks(clamp(uPaper * (1.0 + grain), 0.0, 1.0)) + acc);
   outColor = vec4(clamp(col, 0.0, 1.0), 1.0);
 }`
 
@@ -298,6 +441,8 @@ export interface Press {
    *  px. Zero whenever breathing is off or reduced motion is on — asserted
    *  by web/check.mjs on the uPhaseAmp uniform itself. */
   readonly phaseAmp: number
+  readonly multipass: boolean
+  readonly misregistration: number[][]
   press(): void
   stop(): void
 }
@@ -318,12 +463,61 @@ export function createPress(canvas: HTMLCanvasElement, opts: PressOptions = {}):
     }
     return s
   }
-  const prog = gl.createProgram()!
-  gl.attachShader(prog, sh(gl.VERTEX_SHADER, VERT))
-  gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, FRAG))
-  gl.linkProgram(prog)
-  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
-    throw new Error(gl.getProgramInfoLog(prog) ?? "program link failed")
+  const link = (vs: string, fs: string): WebGLProgram => {
+    const p = gl.createProgram()!
+    gl.attachShader(p, sh(gl.VERTEX_SHADER, vs))
+    gl.attachShader(p, sh(gl.FRAGMENT_SHADER, fs))
+    gl.linkProgram(p)
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+      throw new Error(gl.getProgramInfoLog(p) ?? "program link failed")
+    }
+    return p
+  }
+  const prog = link(VERT, FRAG)
+
+  /* The multi-pass press needs a float render target to sum the plates in.
+     Where the browser cannot give one, the single-pass shader draws the same
+     inks, grain and tooth — everything but the out-of-register plates. */
+  const multi = (() => {
+    if (!gl.getExtension("EXT_color_buffer_float")) return null
+    try {
+      const pass = link(PASS_VERT, PASS_FRAG)
+      const comp = link(COMP_VERT, COMP_FRAG)
+      const tex = gl.createTexture()!
+      const fbo = gl.createFramebuffer()!
+      return { pass, comp, tex, fbo, w: 0, h: 0 }
+    } catch (e) {
+      console.warn("press: one-pass fallback —", (e as Error).message)
+      return null
+    }
+  })()
+  const multiLoc = multi && (() => {
+    const P = (n: string) => gl.getUniformLocation(multi.pass, n)
+    const C = (n: string) => gl.getUniformLocation(multi.comp, n)
+    return {
+      res: P("uRes"), off: P("uOff"), plate: P("uPlate"), dpr: P("uDpr"), paper: P("uPaper"),
+      dark: P("uDark"), cellScale: P("uCellScale"), gain: P("uGain"), n: P("uNPlates"),
+      ink: P("uInk"), ang: P("uAng"), drift: P("uDrift"), lay: P("uLay"),
+      time: P("uTime"), phaseAmp: P("uPhaseAmp"),
+      cAcc: C("uAcc"), cPaper: C("uPaper"), cDpr: C("uDpr"), cDark: C("uDark"),
+    }
+  })()
+
+  /** Size the accumulation buffer to the canvas. Returns false (and the
+   *  press falls back to one pass) if the driver will not render to it. */
+  function sizeAcc(): boolean {
+    if (!multi) return false
+    if (multi.w === canvas.width && multi.h === canvas.height) return true
+    gl.bindTexture(gl.TEXTURE_2D, multi.tex)
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, canvas.width, canvas.height, 0, gl.RGBA, gl.HALF_FLOAT, null)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, multi.fbo)
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, multi.tex, 0)
+    const ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+    multi.w = canvas.width; multi.h = canvas.height
+    return ok
   }
   const buf = gl.createBuffer()
   const U = (n: string) => gl.getUniformLocation(prog, n)
@@ -379,6 +573,7 @@ export function createPress(canvas: HTMLCanvasElement, opts: PressOptions = {}):
 
   function draw() {
     if (!st.mesh || !st.count) return
+    if (multiLoc && sizeAcc()) { drawMulti(); return }
     gl.viewport(0, 0, canvas.width, canvas.height)
     gl.clearColor(st.paper[0], st.paper[1], st.paper[2], 1)
     gl.clear(gl.COLOR_BUFFER_BIT)
@@ -413,6 +608,65 @@ export function createPress(canvas: HTMLCanvasElement, opts: PressOptions = {}):
     gl.uniform1f(loc.time, st.time)
     gl.uniform1f(loc.phaseAmp, st.phaseAmp)
     gl.drawArrays(gl.TRIANGLES, 0, st.count)
+    if (opts.onFrame) opts.onFrame()
+  }
+
+  function bindMesh(p: WebGLProgram) {
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf)
+    gl.bufferData(gl.ARRAY_BUFFER, st.mesh!, gl.STATIC_DRAW)
+    const at = (n: string, size: number, off: number) => {
+      const a = gl.getAttribLocation(p, n)
+      if (a < 0) return
+      gl.enableVertexAttribArray(a)
+      gl.vertexAttribPointer(a, size, gl.FLOAT, false, STRIDE_BYTES, off)
+    }
+    at("aPos", 2, 0); at("aCov", 4, 8); at("aCell", 1, 24); at("aPhase", 1, 28)
+  }
+
+  /** One pass per plate, each out of register by MISREGISTRATION[i], summed
+   *  into the float buffer; then one composite pass resolves the sum on the
+   *  paper. Uniforms go up once per frame, as in the single pass, so the
+   *  harness's per-frame drift and wander counts mean the same thing. */
+  function drawMulti() {
+    const m = multi!, L = multiLoc!
+    gl.bindFramebuffer(gl.FRAMEBUFFER, m.fbo)
+    gl.viewport(0, 0, canvas.width, canvas.height)
+    gl.clearColor(0, 0, 0, 0)
+    gl.clear(gl.COLOR_BUFFER_BIT)
+    gl.useProgram(m.pass)
+    bindMesh(m.pass)
+    gl.uniform2f(L.res, st.w, st.h)
+    gl.uniform1f(L.dpr, st.dpr)
+    gl.uniform3fv(L.paper, st.paper)
+    gl.uniform1f(L.dark, st.dark ? 1 : 0)
+    gl.uniform1f(L.cellScale, st.cellScale)
+    gl.uniform1f(L.gain, st.gain)
+    gl.uniform1f(L.n, st.nPlates)
+    gl.uniform3fv(L.ink, st.inks)
+    gl.uniform1fv(L.ang, st.angles)
+    gl.uniform2fv(L.drift, st.drift)
+    gl.uniform1fv(L.lay, st.lay)
+    gl.uniform1f(L.time, st.time)
+    gl.uniform1f(L.phaseAmp, st.phaseAmp)
+    gl.enable(gl.BLEND)
+    gl.blendEquation(gl.FUNC_ADD)
+    gl.blendFunc(gl.ONE, gl.ONE)
+    for (let i = 0; i < st.nPlates; i++) {
+      gl.uniform1i(L.plate, i)
+      gl.uniform2f(L.off, MISREGISTRATION[i][0], MISREGISTRATION[i][1])
+      gl.drawArrays(gl.TRIANGLES, 0, st.count)
+    }
+    gl.disable(gl.BLEND)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+    gl.viewport(0, 0, canvas.width, canvas.height)
+    gl.useProgram(m.comp)
+    gl.activeTexture(gl.TEXTURE0)
+    gl.bindTexture(gl.TEXTURE_2D, m.tex)
+    gl.uniform1i(L.cAcc, 0)
+    gl.uniform3fv(L.cPaper, st.paper)
+    gl.uniform1f(L.cDpr, st.dpr)
+    gl.uniform1f(L.cDark, st.dark ? 1 : 0)
+    gl.drawArrays(gl.TRIANGLES, 0, 3)
     if (opts.onFrame) opts.onFrame()
   }
 
@@ -469,6 +723,11 @@ export function createPress(canvas: HTMLCanvasElement, opts: PressOptions = {}):
 
     get cellScale() { return st.cellScale },
     get phaseAmp() { return st.phaseAmp },
+    /** True when the plates are drawn one pass each, out of register. */
+    get multipass() { return !!multiLoc && multi!.w > 0 },
+    /** Each plate's fixed registration error, CSS px — constant, so it is
+     *  not motion and holds under reduced motion. */
+    get misregistration() { return MISREGISTRATION.slice(0, st.nPlates).map((v) => [...v]) },
     set reducedMotion(v: boolean) { st.reduced = !!v; if (!v) kick(); else draw() },
 
     /** Ambient breathing on/off. Ignored under reduced motion. */
