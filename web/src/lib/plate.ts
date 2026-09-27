@@ -59,10 +59,11 @@ export const STRIDE_BYTES = STRIDE_FLOATS * 4         // 32
 const VERT = `#version 300 es
 in vec2 aPos; in vec4 aCov; in float aCell; in float aPhase;
 uniform vec2 uRes;
+uniform vec3 uView;
 out vec4 vCov; out float vCell; out float vPhase;
 void main() {
   vCov = aCov; vCell = aCell; vPhase = aPhase;
-  vec2 c = (aPos / uRes) * 2.0 - 1.0;
+  vec2 c = ((aPos * uView.x + uView.yz) / uRes) * 2.0 - 1.0;
   gl_Position = vec4(c.x, -c.y, 0.0, 1.0);
 }`
 
@@ -89,6 +90,10 @@ export const MISREGISTRATION: ReadonlyArray<readonly [number, number]> = [
 export const GRAIN_MIX = 0.6
 /** How much of a plate's ink the paper's deepest tooth refuses. */
 export const SKIP = 0.28
+/** The cell (CSS px, after the view's screen scale) at which BREATH_AMP and
+ *  PHASE_AMP are the literal amplitudes: the national current-map ruling,
+ *  3.6px × GRAIN 0.7. Every other ruling scales its motion by cell / this. */
+export const MOTION_REF_CELL = 2.52
 
 /* Shared by the single-pass fallback and the per-plate pass: the dot,
    the grain, the wander, and the two colour models' per-ink terms. */
@@ -114,6 +119,7 @@ float tooth(vec2 frag) {
   return 0.6 * vnoise(p / 1.7) + 0.4 * vnoise(p / 0.6 + 17.0);
 }
 const float GRAIN_MIX = ${GRAIN_MIX.toFixed(2)};
+const float MOTION_REF_CELL = ${MOTION_REF_CELL.toFixed(3)};
 
 /* This district's own wander for plate i, in CSS px.
  *
@@ -153,7 +159,12 @@ vec2 wander(int i) {
 float plate(vec2 frag, float angle, float cellPx, float cov, vec2 drift, float gain, float seed) {
   if (cov <= 0.0) return 0.0;
   float s = sin(angle), c = cos(angle);
-  vec2 r = mat2(c, -s, s, c) * (frag + drift * uDpr);
+  /* Motion is measured in DOTS, not pixels (2026-09-27). The drift and
+     wander amplitudes are tuned at the finest ruling, MOTION_REF_CELL; a
+     plate screened coarser moves proportionally further, so a 13px dot
+     wanders as visibly as a 2.5px one. A fixed 0.4px on a 13px dot is 3% of
+     a cell — the state blow-up read as a still picture. */
+  vec2 r = mat2(c, -s, s, c) * (frag + drift * uDpr * (cellPx * uCellScale / MOTION_REF_CELL));
   vec2 cell = fract(r / (cellPx * uCellScale * uDpr)) - 0.5;
   float d = length(cell);
   /* Dot AREA scales with coverage, so perceived tone tracks the number —
@@ -266,11 +277,12 @@ void main() {
 const PASS_VERT = `#version 300 es
 in vec2 aPos; in vec4 aCov; in float aCell; in float aPhase;
 uniform vec2 uRes, uOff;
+uniform vec3 uView;
 uniform highp int uPlate;
 out float vCovP; out float vCell; out float vPhase;
 void main() {
   vCovP = aCov[uPlate]; vCell = aCell; vPhase = aPhase;
-  vec2 c = ((aPos + uOff) / uRes) * 2.0 - 1.0;
+  vec2 c = ((aPos * uView.x + uView.yz + uOff) / uRes) * 2.0 - 1.0;
   gl_Position = vec4(c.x, -c.y, 0.0, 1.0);
 }`
 
@@ -348,7 +360,9 @@ export const hex2rgb = (h: string): [number, number, number] =>
  * authentic motion riso has is not a spin or a pulse, it is the plates
  * breathing a fraction of a millimetre against each other, forever.
  *
- * Deliberately SUB-PIXEL (0.42px peak) and slow. The periods below are
+ * 0.42px peak at the finest ruling, and slow; the shader scales it by the
+ * plate's own cell (MOTION_REF_CELL), so it is always ~1/6 of a dot — a fixed
+ * pixel amount was invisible on the coarse state screens. The periods below are
  * mutually irrational-ish on purpose: if they shared a common multiple the
  * plates would resync every few seconds and the drift would read as a
  * throb rather than as a press.
@@ -378,8 +392,9 @@ function breathe(out: Float32Array, tSec: number, amount: number): Float32Array 
 /**
  * PER-DISTRICT WANDER, peak CSS px. Smaller than the global breath on
  * purpose: the sheet still breathes as a press, and each district adds a
- * finer, faster settle on top — about a third of a finer 2.5px cell, enough
- * to read as ink moving and not as the map shaking. See wander() in FRAG.
+ * finer, faster settle on top — about a seventh of a cell at any ruling
+ * (scaled in the shader like BREATH_AMP), enough to read as ink moving and
+ * not as the map shaking. See wander() in FRAG.
  */
 export const PHASE_AMP = 0.34
 
@@ -428,6 +443,13 @@ export interface Press {
   setPaper(hex: string): void
   setDark(v: boolean): void
   setCellScale(v: number): void
+  /** The hand zoom: geometry scaled by k and moved by (tx, ty) CSS px,
+   *  applied in the vertex shader. The SCREEN is untouched — it lives in
+   *  screen space — so zooming by hand grows the districts under a screen
+   *  that holds its ruling. That is re-screening at every zoom level, not a
+   *  camera enlarging the dots. */
+  setView(k: number, tx: number, ty: number): void
+  readonly view: number[]
   draw(): void
   nPlates: number
   readonly reducedMotion: boolean
@@ -495,7 +517,7 @@ export function createPress(canvas: HTMLCanvasElement, opts: PressOptions = {}):
     const P = (n: string) => gl.getUniformLocation(multi.pass, n)
     const C = (n: string) => gl.getUniformLocation(multi.comp, n)
     return {
-      res: P("uRes"), off: P("uOff"), plate: P("uPlate"), dpr: P("uDpr"), paper: P("uPaper"),
+      res: P("uRes"), view: P("uView"), off: P("uOff"), plate: P("uPlate"), dpr: P("uDpr"), paper: P("uPaper"),
       dark: P("uDark"), cellScale: P("uCellScale"), gain: P("uGain"), n: P("uNPlates"),
       ink: P("uInk"), ang: P("uAng"), drift: P("uDrift"), lay: P("uLay"),
       time: P("uTime"), phaseAmp: P("uPhaseAmp"),
@@ -522,7 +544,7 @@ export function createPress(canvas: HTMLCanvasElement, opts: PressOptions = {}):
   const buf = gl.createBuffer()
   const U = (n: string) => gl.getUniformLocation(prog, n)
   const loc = {
-    res: U("uRes"), dpr: U("uDpr"), paper: U("uPaper"), dark: U("uDark"),
+    res: U("uRes"), view: U("uView"), dpr: U("uDpr"), paper: U("uPaper"), dark: U("uDark"),
     cellScale: U("uCellScale"), gain: U("uGain"), n: U("uNPlates"),
     ink: U("uInk"), ang: U("uAng"), drift: U("uDrift"), lay: U("uLay"),
     time: U("uTime"), phaseAmp: U("uPhaseAmp"),
@@ -537,6 +559,7 @@ export function createPress(canvas: HTMLCanvasElement, opts: PressOptions = {}):
     lay: new Float32Array(MAX_PLATES).fill(1),
     paper: [1, 1, 1] as [number, number, number], dark: false,
     cellScale: 1, gain: 1, time: 0, phaseAmp: 0,
+    view: new Float32Array([1, 0, 0]),
     mesh: null as Float32Array | null, count: 0,
     breathing: false, reduced: prefersReducedMotion(),
     pressT: -1, gainT: -1, raf: 0, t0: performance.now(),
@@ -570,6 +593,7 @@ export function createPress(canvas: HTMLCanvasElement, opts: PressOptions = {}):
   function setPaper(hex: string) { st.paper = hex2rgb(hex) }
   function setDark(v: boolean) { st.dark = !!v }
   function setCellScale(v: number) { st.cellScale = v }
+  function setView(k: number, tx: number, ty: number) { st.view[0] = k; st.view[1] = tx; st.view[2] = ty }
 
   function draw() {
     if (!st.mesh || !st.count) return
@@ -595,6 +619,7 @@ export function createPress(canvas: HTMLCanvasElement, opts: PressOptions = {}):
     gl.vertexAttribPointer(aPhase, 1, gl.FLOAT, false, STRIDE_BYTES, 28)
 
     gl.uniform2f(loc.res, st.w, st.h)
+    gl.uniform3fv(loc.view, st.view)
     gl.uniform1f(loc.dpr, st.dpr)
     gl.uniform3fv(loc.paper, st.paper)
     gl.uniform1f(loc.dark, st.dark ? 1 : 0)
@@ -636,6 +661,7 @@ export function createPress(canvas: HTMLCanvasElement, opts: PressOptions = {}):
     gl.useProgram(m.pass)
     bindMesh(m.pass)
     gl.uniform2f(L.res, st.w, st.h)
+    gl.uniform3fv(L.view, st.view)
     gl.uniform1f(L.dpr, st.dpr)
     gl.uniform3fv(L.paper, st.paper)
     gl.uniform1f(L.dark, st.dark ? 1 : 0)
@@ -715,8 +741,9 @@ export function createPress(canvas: HTMLCanvasElement, opts: PressOptions = {}):
   function kick() { if (!st.raf) st.raf = requestAnimationFrame(loop) }
 
   return {
-    gl, resize, setMesh, setInks, setAngles, setPaper, setDark, setCellScale,
+    gl, resize, setMesh, setInks, setAngles, setPaper, setDark, setCellScale, setView,
     draw,
+    get view() { return [st.view[0], st.view[1], st.view[2]] },
     get nPlates() { return st.nPlates },
     set nPlates(v: number) { st.nPlates = v },
     get reducedMotion() { return st.reduced },

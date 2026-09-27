@@ -340,7 +340,11 @@ export function makePicker<P>(shapes: ProjectedShape<P>[], width: number, height
     }
     ctx.fill("evenodd")
   })
-  return (x: number, y: number): number => {
+  /* `k` is the hand zoom. Coordinates arrive in the plate's own (unzoomed)
+     space, so at k=4 one plate pixel is four screen pixels — quantising to
+     the plate pixel would hand a click the district two screen pixels away.
+     Quantise to the SCREEN pixel instead, i.e. to 1/k of a plate pixel. */
+  return (x: number, y: number, k = 1): number => {
     // Decide by PIXEL, never by the float that came in. `click` truncates
     // clientX to an integer and `pointermove` does not, so one cursor
     // position arrives as two different numbers — 183.7 to the tooltip, 183
@@ -348,9 +352,10 @@ export function makePicker<P>(shapes: ProjectedShape<P>[], width: number, height
     // reader sees one place and must get one answer, so both are quantised
     // to the pixel they fall in and every test below asks about its centre.
     // (floor, not round: the pixel containing 183.7 is 183, not 184.)
-    const px = Math.floor(x * dpr), py = Math.floor(y * dpr)
+    const r = dpr * k
+    const qx = (Math.floor(x * r) + 0.5) / r, qy = (Math.floor(y * r) + 0.5) / r
+    const px = Math.floor(qx * dpr), py = Math.floor(qy * dpr)
     if (px < 0 || py < 0 || px >= cv.width || py >= cv.height) return -1
-    const qx = (px + 0.5) / dpr, qy = (py + 0.5) / dpr
     const d = ctx.getImageData(px, py, 1, 1).data
     const v = d[0] | (d[1] << 8) | (d[2] << 16)
     const i = v - 1

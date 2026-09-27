@@ -58,8 +58,53 @@ export const FLAT_CELL = BASE_CELL.cd119_current * GRAIN
  * table, so every certainty ratio survives the change intact.
  */
 export const NATIONAL_SCALE = 1
-export const STATE_SCALE = 8 / BASE_CELL.cd119_current   // ≈ 2.222 — the state
-// plate keeps the same RELATIVE blow-up; with GRAIN it lands at 5.6px, not 8.
+/** The CEILING of the state re-screen, no longer the value. Until 2026-09-27
+ *  every state was re-screened at this one factor, and in California — every
+ *  district superseded, so every district on the coarse screen — that put a
+ *  13.1px dot on Los Angeles districts ~15px across: one dot per district,
+ *  and the money unreadable exactly where the districts are densest. */
+export const STATE_SCALE = 8 / BASE_CELL.cd119_current   // ≈ 2.222
+
+/** How many of its OWN cells a small district must hold across. */
+export const MIN_CELLS_ACROSS = 6
+
+/**
+ * The state plate's screen scale, fit to the state's SMALL districts.
+ *
+ * A print shop picks the ruling for the reproduction in hand, and the
+ * reproduction here is only as legible as its smallest districts. So: take
+ * each district's width in its own cells (sqrt of its projected area over
+ * its vintage's cell), and choose the scale at which the lower quartile
+ * holds MIN_CELLS_ACROSS. Clamped to [NATIONAL_SCALE, STATE_SCALE] — a
+ * blow-up never prints finer than the nation, and a one-district state
+ * still gets the old coarse plate. Computed from each district's OWN cell,
+ * so the certainty ratio is untouched: it is one multiplier over CELL, as
+ * before, just chosen per state. Whatever the quartile cannot resolve, the
+ * hand zoom can — it grows districts under a screen that holds its ruling.
+ */
+export function stateScale(shapes: { area?: number; props: unknown }[]): number {
+  const across = shapes
+    .map((s) => Math.sqrt(s.area ?? 0) /
+      (CELL[(s.props as { map_status?: string }).map_status ?? ""] ?? FLAT_CELL))
+    .filter((v) => v > 0)
+    .sort((a, b) => a - b)
+  if (!across.length) return STATE_SCALE
+  const q = across[Math.floor((across.length - 1) * 0.25)]
+  return Math.max(NATIONAL_SCALE, Math.min(STATE_SCALE, q / MIN_CELLS_ACROSS))
+}
+
+/** The cell most of a view's districts print at, CSS px — what its legend
+ *  chips are screened at, so the key is the same picture as the map. */
+export function dominantCell(props: { map_status?: string }[], scale: number): number {
+  const n = new Map<number, number>()
+  for (const p of props) {
+    const c = CELL[p.map_status ?? ""] ?? FLAT_CELL
+    n.set(c, (n.get(c) ?? 0) + 1)
+  }
+  let best = FLAT_CELL, most = -1
+  for (const [c, k] of n) if (k > most) { best = c; most = k }
+  return best * scale
+}
 
 /**
  * A district blow-up is a THIRD plate, re-screened again.
@@ -308,8 +353,10 @@ export function renderSenateTable(el: HTMLElement, states: GeoFeatureOf<StatePro
 
 /** The "you are looking at Texas" strip, with the way back — one tier at a
  *  time: a district goes back to its state, a state to the nation. */
-export function renderStateBar(el: HTMLElement, { state, districts, senate, district }: {
+export function renderStateBar(el: HTMLElement, { state, districts, senate, district, scale = STATE_SCALE }: {
   state: string | null
+  /** The screen scale this state's plate is actually printed at. */
+  scale?: number
   districts: GeoFeatureOf<DistrictProperties>[]
   senate: StateProperties | null | undefined
   cycle: string
@@ -326,9 +373,7 @@ export function renderStateBar(el: HTMLElement, { state, districts, senate, dist
       ${district.map_status === "cd119_superseded" ? `<span class="statebar-warn">drawn
         from a superseded map</span>` : ""}
     </div>
-    <div class="statebar-screen">Re-screened at ${
-      (CELL.cd119_current * DISTRICT_SCALE).toFixed(1)}px —
-      a blow-up is a new plate</div>`
+    <div class="statebar-screen">${screenLine(DISTRICT_SCALE, [district])}</div>`
     return
   }
   const tot = districts.reduce((a, f) => a + f.properties.pac_cents, 0)
@@ -345,9 +390,19 @@ export function renderStateBar(el: HTMLElement, { state, districts, senate, dist
       ${stale ? `<span class="statebar-warn">${stale} of ${districts.length}
         drawn from a superseded map</span>` : ""}
     </div>
-    <div class="statebar-screen">Re-screened at ${
-      (CELL.cd119_current * STATE_SCALE).toFixed(1)}px —
-      a blow-up is a new plate</div>`
+    <div class="statebar-screen">${screenLine(scale, districts.map((f) => f.properties))}</div>`
+}
+
+/** "Re-screened at 2.5px (5.9px where superseded)". The current-map cell
+ *  comes first, always — web/check.mjs reads that number and holds it to
+ *  the GPU uniform — and the coarse ruling is named when the view carries
+ *  it, because in a fully superseded state it is the only dot on screen. */
+function screenLine(scale: number, props: { map_status?: string }[]): string {
+  const px = (c: number) => `${(c * scale).toFixed(1)}px`
+  const stale = props.some((p) => p.map_status === "cd119_superseded")
+  return `Re-screened at ${px(CELL.cd119_current)}${
+    stale ? ` (${px(CELL.cd119_superseded)} where superseded)` : ""} —
+    a blow-up is a new plate`
 }
 
 /* ------------------------------------------------------------------ */

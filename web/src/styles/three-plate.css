@@ -194,3 +194,28 @@ button.ctl[aria-pressed="true"] {
   background: var(--accent-fill); color: var(--on-accent); border-color: var(--accent-fill);
 }
 button.ctl:focus-visible, .offchip:focus-visible { outline-color: var(--accent-text); }
+
+/* Legend chips are printed at the map's own ruling (App.tsx chipCell), so
+   they are big enough to hold a few of the state plate's coarsest dots. */
+.legend-chip canvas, .lv-mark canvas { width: 44px; height: 20px; display: block; }
+.legend-chip, .lv-mark { width: 44px; height: 20px; }
+.lv-printed { background: none; }
+
+/* The hand zoom. Over the plate, top right, only in a state or district. */
+.zoomctl {
+  position: absolute; top: 10px; right: 10px; z-index: 2;
+  display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+  justify-content: flex-end; max-width: 60%;
+}
+.zoomctl[hidden] { display: none; }
+.zoomctl .ctl { min-width: 34px; padding: 4px 9px; background: var(--paper); }
+.zoomctl-k {
+  font: 400 12px/1 var(--mono); font-variant-numeric: tabular-nums;
+  min-width: 3.2em; text-align: center; color: var(--ink-2);
+  background: var(--paper); padding: 6px 2px;
+}
+.zoomctl-hint {
+  margin-left: auto; font-size: 11px; color: var(--ink-3);
+  background: var(--paper); padding: 2px 6px;
+}
+@media (max-width: 720px) { .zoomctl-hint { display: none; } }
