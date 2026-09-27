@@ -13,7 +13,7 @@
    what the map looks like when the only question is how much.
 
    Ported from web/prototypes/d-threeplate.html's inline <style>. */
-:root { --paper: #F5F3EE; }
+:root { --paper: #F8F6F1; }
 [data-theme="dark"] { --paper: #17171A; }
 
 .stage-inner { position: relative; background: var(--paper); }
@@ -175,3 +175,22 @@ details.colophon summary {
 }
 details.colophon summary:focus-visible { outline: 2px solid var(--key); outline-offset: 2px; }
 details.colophon[open] summary { margin-bottom: 10px; }
+
+/* ---- riso accents (2026-09-27) ------------------------------------
+   The page picks up the drums the map prints with, on accents only: body
+   text stays near-black. The masthead rule is a pink stripe laid a hair
+   out of register over a blue one — the same misregistration the plates
+   carry — and the active control is a solid of the accent drum. */
+.masthead { border-bottom: none; position: relative; }
+.masthead::after, .masthead::before {
+  content: ""; position: absolute; left: var(--gut); right: var(--gut); height: 3px;
+}
+.masthead::before { bottom: 0; background: var(--riso-blue); }
+.masthead::after { bottom: 2px; left: calc(var(--gut) + 3px); background: var(--accent-mark); mix-blend-mode: multiply; opacity: .9; }
+[data-theme="dark"] .masthead::after { mix-blend-mode: screen; }
+.kicker { color: var(--accent-text); }
+.legend-title, .colophon h2, details.colophon summary { color: var(--accent-text); }
+button.ctl[aria-pressed="true"] {
+  background: var(--accent-fill); color: var(--on-accent); border-color: var(--accent-fill);
+}
+button.ctl:focus-visible, .offchip:focus-visible { outline-color: var(--accent-text); }

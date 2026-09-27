@@ -60,6 +60,10 @@ export interface System {
   gray?: string[]
   legible?: number[]
   rampWeights?: (i: number) => number[]
+  /** Per money step, a position on the three-plate INK PATH (0..2) — see
+   *  pathWeights(). Replaces `split` for systems that set it. */
+  path?: number[]
+  pathDark?: number[]
   key?: HexColor
   keyDark?: HexColor
 }
@@ -204,102 +208,104 @@ export const C: System = {
 /* ================================================================== */
 
 /**
- * D — THREE-PLATE. Money only, extended tonal range — and, since 2026-09-24,
- * a WIDER HUE SWEEP.
+ * D — THREE-PLATE, IN REAL RISO INKS (2026-09-27).
  *
  * ordinal: monotone PASS · every adjacent gap >= 0.06 PASS · LIGHT-END
- * CONTRAST DELIBERATELY FAILED — surface #F5F3EE, pale end #c1ccae at
- * 1.51:1 against a 2:1 gate (dark stock: #4b341f at 1.54:1). See the
- * coverage floor below; this is a departure taken on the record.
+ * CONTRAST DELIBERATELY FAILED (1.44:1 light / 1.95:1 dark against a 2:1
+ * gate), for the reason the floor note below gives: a district carries a
+ * keyline, so its fill carries ORDER, which is the ΔL gate's job.
  *
- * SINGLE HUE IS DELIBERATELY FAILED — and now by more. The three plates ARE
- * three hues, lightness alone carries the order, and hue rides along as a
- * secondary channel the way viridis does. The gate exists to stop a rainbow
- * where hue does the encoding; here it does not. Monotone L and the step gaps
- * — the checks that actually carry the ordering — pass unaided, with more
- * margin than before.
+ * WHY THE INKS CHANGED AGAIN. The user's note of 2026-09-27: on the warm
+ * stock the low end read muddy, the range read flat, and the map did not
+ * read as riso. The 2026-09-24 plates were a SEARCHED triple (#688e3b
+ * #096a74 #19007f), not inks a riso shop stocks, and their pale end was a
+ * khaki. These are Riso's own drum colours, by name:
  *
- * WHY THE PLATES CHANGED. The user's note of 2026-09-24: the districts need
- * more colour and more readability. Measured, the old set's bottom three
- * steps sat within 8° of hue of each other (161/162/169) — three greens a
- * reader told apart by lightness alone — and neighbouring steps were only
- * ΔE 7.6 apart. The plates were re-searched (≈10k ink triples through the
- * solver in solve.ts) for the widest hue sweep that still clears every
- * ordering check, keeps each printed tone at chroma >= 0.04 (a three-ink
- * overprint of near-complements prints MUD, and most wide-sweep triples do),
- * and holds the pale end above 1.5:1. Measured on the printed composite, the
- * dataviz validator's units:
+ *   LIGHT  Yellow #FFE800 · Fluorescent Pink #FF48B0 · Medium Blue #3255A4
+ *   DARK   the same three, reversed on the path: dim blue -> pink -> yellow,
+ *          so on black stock the MOST money is the brightest glow
  *
- *                      old (green/teal/navy)    new
- *   LIGHT  plates      #0C8152 #1F769F #1D3681  #688e3b #096a74 #19007f
- *          hue sweep          66°                127°   khaki → indigo
- *          min adj ΔE          7.6                 9.1
- *          min adj CVD ΔE      6.7                 8.5   (clears the 8 target)
- *          min adj ΔL          0.073               0.089
- *          pale end            1.64:1              1.51:1
- *   DARK   plates      #3B895D #3F7D9A #3A518A  #a05b11 #2b7e75 #2773ee
- *          hue sweep          47°                138°   umber → ice blue
- *          min adj ΔE          7.0                 7.8
- *          min adj CVD ΔE      7.0                 7.1
- *          min adj ΔL          0.069               0.073
- *          dim end             1.67:1              1.54:1
+ * They cannot be stacked the old way (see pathWeights: the cumulative build
+ * prints brown), so D now builds on the INK PATH. Measured on the printed
+ * composite, the dataviz validator's units:
  *
- * The one cost is the pale end, 0.13:1 darker on light stock. Requiring the
- * old 1.6:1 caps the sweep near 94°; 1.5:1 is the knee. It stays clear of
- * the 1.32:1 below which (see the floor note) the pale fill stops reading as
- * ink. Dark stock is SELECTED from its own search, not flipped: additive
- * light from an ochre, a teal and a blue reads as umber → sage → ice.
+ *                      2026-09-24 (searched)     2026-09-27 (Riso)
+ *   LIGHT  ramp        khaki -> indigo           yellow, orange, coral,
+ *                                                lavender, violet, indigo
+ *          hue sweep          127°                    160°
+ *          min chroma         0.041                   0.096
+ *          min adj ΔE          9.1                     7.9
+ *          min adj CVD ΔE      8.5                     7.0
+ *          min adj ΔL          0.089                   0.074
+ *          pale end            1.51:1                  1.44:1
+ *   DARK   ramp        umber -> ice              plum, magenta, orchid,
+ *                                                rose, gold, yellow
+ *          hue sweep          138°                    138°
+ *          min adj CVD ΔE      7.1                     8.2
+ *          min adj ΔL          0.073                   0.089
  *
- * The tables are SOLVED by solveTable() and inks.test.ts asserts they equal
- * its output, so a plate changed without a re-solve fails the build.
+ * THE COST, TAKEN ON THE RECORD: light-stock colour-blind separation drops
+ * from 8.5 to 7.0 (target 8). Four seeded searches over every path through
+ * these three inks converge on 7.0-7.2, so this is the inks' ceiling, not a
+ * tuning miss. Shown to the user beside the old ramp on 2026-09-27 and
+ * accepted for the doubled chroma. The ordering itself — the thing a CVD
+ * reader needs — is carried by ΔL, which passes with margin.
+ *
+ * The paper moved too: #F5F3EE -> #F8F6F1, a cleaner uncoated white the
+ * spot inks read against. Every table below is solved on it.
+ *
+ * FLOORS: 0.71 light, 0.42 dark. The light floor is high because the first
+ * step is mostly Yellow, and Yellow is nearly paper-light (OKLab L 0.92):
+ * at the old 0.34 the lowest-money district was a 1.08:1 cream. The step
+ * still reads as the palest of six, and the old floor note's logic holds —
+ * the four middle coverages are solved, never typed.
+ *
+ * The tables are SOLVED by solvePathTable() and inks.test.ts asserts they
+ * equal its output, so a plate or path changed without a re-solve fails the
+ * build. Round-2 history (the 0.34 floor, the 2:1 gate) is in git.
  */
 export const D: System = {
   id: "d", name: "Three-Plate",
-  paper: "#F5F3EE", paperDark: "#17171A",
+  paper: "#F8F6F1", paperDark: "#17171A",
   inks: B.inks, other: "#6B6B66", inksDark: B.inksDark,
   ramp: [], rampDark: [], // derived below, never typed — see derivedRamp()
-  plates: { first: "#688e3b", second: "#096a74", third: "#19007f" },
-  platesDark: { first: "#a05b11", second: "#2b7e75", third: "#2773ee" },
-  // The composite coverage per money step. NOT linear: the steps are spaced
-  // to be equal in PERCEIVED LIGHTNESS, which is the only spacing under
-  // which six quantile classes read as six. Derived — floor and ceiling are
-  // the only chosen numbers, and the four between them are solved for equal
-  // printed lightness on the plate mix each step actually uses.
-  //
-  // THE FLOOR IS 0.34, LOWERED FROM 0.4625 (light) / 0.4375 (dark).
-  //
-  // Round 2 raised it to clear the validator's 2:1 light-end contrast gate,
-  // which is written for a chart mark on a chart surface. A district is not
-  // a bare mark: it carries a keyline, which is the heaviest thing on the
-  // plate and is what answers "is this a district" — so the fill only has to
-  // carry ORDER among six classes, and that is the adjacent-ΔL gate, not the
-  // contrast one. Measured over the floor, on the shipped ink model:
-  //
-  //     floor   light-end vs paper   min adjacent ΔL (gate 0.06)
-  //     0.20         1.32:1                 0.086
-  //     0.34         1.64:1                 0.073
-  //     0.40         1.81:1                 0.068
-  //     0.4625       2.01:1                 0.061   <- what round 2 shipped
-  //
-  // (Those rows were measured on the round-2 plates. On the 2026-09-24
-  // plates the 0.34 floor measures 1.51:1 and 0.089 — see the header.)
-  //
-  // The two ends are in direct conflict (COMPARISON.md §10: 2:1 is
-  // unreachable below c ≈ 0.53 against this paper whatever the ink), so this
-  // is a choice about which gate the map is judged by, not a bug to fix.
-  // 0.34 buys 20% more separation between the six money classes and is the
-  // floor E and F already use, which stops D being the outlier. It is not
-  // taken all the way to round 1's 0.20: at 1.32:1 the palest fill is a tint
-  // no one would call ink, and the certainty screen — the coarse dots that
-  // carry map vintage — stops being legible in it.
-  //
-  // Re-derive rather than retype if the floor moves again: the four middle
-  // coverages are a solved consequence of it, and a hand-edited table drifts
-  // away from the lightness spacing that is the whole point.
-  table: [0.34, 0.5672, 0.7114, 0.802, 0.8343, 0.88],
-  tableDark: [0.34, 0.5296, 0.6566, 0.7402, 0.8144, 0.88],
+  plates: { first: "#FFE800", second: "#FF48B0", third: "#3255A4" },
+  platesDark: { first: "#3255A4", second: "#FF48B0", third: "#FFE800" },
+  path: [0.17, 0.30, 0.76, 1.52, 1.60, 1.68],
+  pathDark: [0.66, 0.70, 0.70, 1.17, 1.64, 2.00],
+  table: [0.71, 0.8301, 0.8271, 0.6745, 0.7829, 0.88],
+  tableDark: [0.42, 0.5881, 0.7466, 0.8186, 0.7991, 0.88],
   plateOrder: ["first", "second", "third"],
-  split: (t: number, n = 3) => seqWeights(t, n),
+}
+
+/**
+ * S — THE SENATE PLATE (2026-09-27). The Senate layer used to print on D,
+ * so switching layers changed the numbers under an identical-looking map
+ * and a reader could take Senate dollars for House dollars. It now prints
+ * its own Riso inks, a COOL family chosen so it cannot be mistaken for D's
+ * warm low end: Aqua #5EC8E5 · Teal #00838A · Burgundy #914E72 (dark stock
+ * reverses the path, as D does).
+ *
+ *   LIGHT  aqua -> teal -> slate -> plum    min adj ΔL 0.070 · CVD 6.6 · ΔE 7.1
+ *   DARK   plum -> teal -> aqua glow        min adj ΔL 0.074 · CVD 7.3 · ΔE 7.5
+ *
+ * The user's first pick was Orange/Teal/Burgundy; measured, its low end
+ * (peach, orange) matched the new House ramp's and its dark stock reached
+ * only CVD 5.6. Shown side by side 2026-09-27; this family was chosen. Same
+ * build, same solver, same test gates as D.
+ */
+export const S: System = {
+  id: "s", name: "Senate Plate",
+  paper: D.paper, paperDark: D.paperDark,
+  inks: B.inks, other: "#6B6B66", inksDark: B.inksDark,
+  ramp: [], rampDark: [],
+  plates: { first: "#5EC8E5", second: "#00838A", third: "#914E72" },
+  platesDark: { first: "#914E72", second: "#00838A", third: "#5EC8E5" },
+  path: [0.00, 0.44, 0.63, 1.22, 1.30, 1.85],
+  pathDark: [0.00, 0.74, 0.75, 1.13, 1.76, 1.83],
+  table: [0.51, 0.5302, 0.6404, 0.6593, 0.7656, 0.88],
+  tableDark: [0.49, 0.5904, 0.7354, 0.8499, 0.7708, 0.88],
+  plateOrder: ["first", "second", "third"],
 }
 
 /**
@@ -407,7 +413,7 @@ export const F: System = {
  * Chroma is then free, and at four steps both gates clear:
  *
  *              worst normal ΔE   worst CVD ΔE   cross-step   min ΔL
- *     light         16.7             13.6          20.0       0.062
+ *     light         16.8             13.6          20.0       0.062
  *     dark          16.7             13.1          21.7       0.068
  *     gate          15               8             15         0.06
  *
@@ -416,8 +422,8 @@ export const F: System = {
  * below is not the top scorer — it is the top scorer that still reads as red
  * and blue rather than brick and violet.
  *
- * TWO TABLES ON PURPOSE. tableRep and tableDem differ (0.6089 vs 0.6228)
- * because that is what makes the printed lightness match. Collapsing them
+ * TWO TABLES ON PURPOSE. tableRep and tableDem differ (0.6105 vs 0.6199 on
+ * the 2026-09-27 paper #F8F6F1; 0.6089 vs 0.6228 on the old one) because that is what makes the printed lightness match. Collapsing them
  * into one puts party back into the money axis. inks.test.ts asserts it.
  *
  * DARK STOCK FAILS THE 2:1 LIGHT-END CONTRAST GATE at 1.35:1. Deliberate,
@@ -446,11 +452,11 @@ export const F: System = {
 export const PARTY = {
   inkRep: "#a80009", inkDem: "#0045c7", inkNeutral: "#4d4d4d",
   inkRepDark: "#d1000e", inkDemDark: "#0156ef", inkNeutralDark: "#6b6b6b",
-  tableRep: [0.50, 0.6089, 0.7327, 0.88],
-  tableDem: [0.50, 0.6228, 0.7468, 0.88],
+  tableRep: [0.50, 0.6105, 0.7319, 0.88],
+  tableDem: [0.50, 0.6199, 0.7456, 0.88],
   tableRepDark: [0.34, 0.5213, 0.6976, 0.88],
   tableDemDark: [0.34, 0.5202, 0.6937, 0.88],
-  tableNeutral: [0.5364, 0.6431, 0.7498, 0.8471],
+  tableNeutral: [0.5386, 0.6435, 0.7485, 0.8496],
   tableNeutralDark: [0.2705, 0.4476, 0.6345, 0.8214],
   STEPS: 4,
 } as const
@@ -491,7 +497,7 @@ export function partyInkOf(incumbent: unknown): PartyInk {
   return incumbent === "REP" ? "REP" : incumbent === "DEM" ? "DEM" : "NEUTRAL"
 }
 
-export const SYSTEMS: Record<string, System> = { a: A, b: B, c: C, d: D, e: E, f: F }
+export const SYSTEMS: Record<string, System> = { a: A, b: B, c: C, d: D, s: S, e: E, f: F }
 /* ------------------------------------------------------------------ */
 /*  Shared encoders                                                    */
 /* ------------------------------------------------------------------ */
@@ -661,6 +667,53 @@ export function sequentialPlates(t: number, n = 3, table?: number[]): number[] {
                   seqWeights(t, n))
 }
 
+/**
+ * THE INK PATH — the build for the Riso systems (D since 2026-09-27, and S).
+ *
+ * seqWeights() stacks the plates cumulatively, so the top step is all three
+ * inks overprinted. With a green, a teal and an indigo that printed depth;
+ * with real Riso Yellow, Fluorescent Pink and Medium Blue it prints MUD —
+ * measured, the cumulative build's top step is #8d6555, a brown, and the
+ * steps collapse (min ΔL 0.030 against the 0.06 gate) because yellow cannot
+ * darken. So each money step instead sits at a position s on a path through
+ * the plates, and AT MOST TWO NEIGHBOURING INKS overprint:
+ *
+ *     s in [0,1]   plate 1 -> plate 2      yellow, orange, coral
+ *     s in [1,2]   plate 2 -> plate 3      magenta, violet, indigo
+ *
+ * An overprint of two neighbours is a clean secondary (yellow+pink is the
+ * orange a riso shop prints on purpose); three near-complements are not.
+ * The money is still the COMPOSITE coverage C off the step table, split by
+ * splitInk() so total ink stays the money — the path only chooses the mix.
+ */
+export function pathWeights(s: number): number[] {
+  const x = Math.max(0, Math.min(2, s))
+  return x <= 1 ? [1 - x, x, 0] : [0, 2 - x, x - 1]
+}
+
+/** The plate weights a system prints at money step i, on one stock. */
+export function stepWeights(sys: System, i: number, dark: boolean, steps = 6): number[] {
+  const path = dark ? sys.pathDark : sys.path
+  if (path) return pathWeights(path[i])
+  const n = sys.plateOrder?.length ?? 3
+  return sys.split ? sys.split(i / (steps - 1), n) : Array(n).fill(1)
+}
+
+/** The inks a system's plates print, in plate order, on one stock. */
+export function platesOf(sys: System, dark: boolean): HexColor[] {
+  const plates = (dark ? sys.platesDark : sys.plates)!
+  return sys.plateOrder!.map((k) => plates[k])
+}
+
+/** Per-plate coverages for a money position t (0..1, one of the six steps):
+ *  what the map prints and what the legend chip prints — one function, so
+ *  the two cannot disagree. */
+export function moneyPlates(sys: System, t: number, dark: boolean): number[] {
+  const table = (dark ? sys.tableDark : sys.table)!
+  const i = Math.max(0, Math.min(table.length - 1, Math.round(t * (table.length - 1))))
+  return splitInk(table[i], stepWeights(sys, i, dark, table.length))
+}
+
 export function proportionalPlates(t: number, parts: number[], table?: number[]): number[] {
   return splitInk(table ? coverageAt(t, table)
                         : COVERAGE_FLOOR + t * (COVERAGE_CEIL - COVERAGE_FLOOR),
@@ -728,11 +781,12 @@ export function derivedRamp(sys: System, dark = false, weightsAt?: (i: number) =
   const paper = dark ? sys.paperDark : sys.paper
   const n = inks.length
   const w = weightsAt ?? sys.rampWeights
-    ?? (sys.split ? (t: number) => sys.split!(t, n) : () => inks.map(() => 1))
+    ?? ((sys.path ? (t: number) => stepWeights(sys, Math.round(t * (table.length - 1)), dark, table.length)
+        : sys.split ? (t: number) => sys.split!(t, n) : () => inks.map(() => 1)))
   return table.map((C, i) => plateTone(paper, inks, splitInk(C, w(i / (table.length - 1))), dark))
 }
 
-for (const sys of [D, E, F]) {
+for (const sys of [D, S, E, F]) {
   sys.ramp = derivedRamp(sys, false)
   sys.rampDark = derivedRamp(sys, true)
 }

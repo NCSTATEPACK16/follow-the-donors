@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react"
 import {
-  D, SCREEN_ANGLES, densityT, partyInkOf, partyPlate, partyStep,
-  sequentialPlates, usd, usdCompact,
+  D, S, SCREEN_ANGLES, densityT, moneyPlates, partyInkOf, partyPlate, partyStep,
+  platesOf, usd, usdCompact, type System,
 } from "./lib/inks"
 import {
   loadAtlas, makeProjection, projectAll, measure, makePicker,
@@ -22,6 +22,8 @@ import { DEFAULT_CYCLE, type Cycle } from "./lib/config"
 import { Finder } from "./components/Finder"
 
 const SYS = D
+/** The Senate layer prints its own Riso inks (inks.ts S), never D's. */
+const SEN = S
 const CYCLE: Cycle = DEFAULT_CYCLE
 /* Three plates, three angles. GLOBAL — one angle per plate for the whole
    sheet, never per district. See plate.ts's header comment. */
@@ -144,7 +146,7 @@ export default function App() {
         kicker: `follow the donors · ${CYCLE} cycle`,
         title: "Federal PAC Money by District",
         // No ink names here: the shell is rendered once, and dark stock
-        // prints the same drums as umber/sage/ice rather than khaki/indigo.
+        // prints the same drums in a different order (see inks.ts D).
         thesis: "Federal PAC money, printed on three drums. Depth of ink is "
           + "the money; how coarse the screen is, is how sure we are the "
           + "district is still shaped like that.",
@@ -153,10 +155,8 @@ export default function App() {
       renderCycleBand(el(bandRef), atlas.meta)
       renderStatePicker(el(pickerRef), stateIndex(atlas), (st) => goTo({ mode: "state", st, geoid: null }))
 
-      const stepTable = () => (dark ? SYS.tableDark! : SYS.table!)
-
       const encodeHouse = () => (p: Record<string, unknown>) => ({
-        cov: sequentialPlates(densityT(p.pac_cents as number, BREAKS), 3, stepTable()),
+        cov: moneyPlates(SYS, densityT(p.pac_cents as number, BREAKS), dark),
         cell: (CELL[p.map_status as string] ?? FLAT_CELL) * 1,
       })
       /* One ink per district, four money steps. The press takes three
@@ -175,7 +175,7 @@ export default function App() {
       }
       const encodeSenate = () => (p: Record<string, unknown>) => ({
         cov: p.has_senate
-          ? sequentialPlates(densityT(p.total_cents as number, SEN_BREAKS), 3, stepTable())
+          ? moneyPlates(SEN, densityT(p.total_cents as number, SEN_BREAKS), dark)
           : [0, 0, 0],
         cell: p.seat_up ? CELL.cd119_current : CELL.cd119_superseded,
       })
@@ -294,11 +294,10 @@ export default function App() {
       function paint() {
         press!.setPaper(dark ? SYS.paperDark : SYS.paper)
         press!.setDark(dark)
+        const senate = view.mode === "national" && view.layer === "senate"
         press!.setInks(view.layer === "party"
           ? (["REP", "DEM", "NEUTRAL"] as const).map((pt) => partyPlate(pt, dark).ink)
-          : dark
-            ? [SYS.platesDark!.first, SYS.platesDark!.second, SYS.platesDark!.third]
-            : [SYS.plates!.first, SYS.plates!.second, SYS.plates!.third])
+          : platesOf(senate ? SEN : SYS, dark))
         press!.draw()
         drawLines()
         paintLegend()
@@ -365,7 +364,11 @@ export default function App() {
       function paintLegend() {
         const senate = view.mode === "national" && view.layer === "senate"
         const legendEl = el(legendRef)
-        if (senate) { renderSenateLegend(legendEl, atlas!.senate!); return }
+        if (senate) {
+          renderSenateLegend(legendEl, atlas!.senate!, SEN_BREAKS)
+          paintChips(legendEl, SEN)
+          return
+        }
         if (view.layer === "party") {
           renderPartyLegend(legendEl, { cycle: CYCLE, breaks: BREAKS, ambiguous, hasData: hasParty })
           legendEl.querySelectorAll<HTMLElement>("[data-party]").forEach((chip) => {
@@ -397,22 +400,22 @@ export default function App() {
           labels: atlas!.meta.break_labels,
           staleLabel: "Superseded — printed coarse; a redraw is in effect and we cannot draw it",
         })
+        paintChips(legendEl, SYS)
+      }
+
+      /** Each legend chip is printed, not filled: the SAME coverages the map
+       *  prints for that step (moneyPlates, off the step table and the ink
+       *  path) at the current-map cell, doubled for the 2x chip canvas. A
+       *  typed swatch is how the legend once pictured a different map. */
+      function paintChips(legendEl: HTMLElement, sys: System) {
+        const pl = platesOf(sys, dark)
         legendEl.querySelectorAll(".legend-chip").forEach((chip, i) => {
           const cv = document.createElement("canvas")
           const w = 60, h = 26
           cv.width = w; cv.height = h
           const c = cv.getContext("2d")!
-          c.fillStyle = dark ? SYS.paperDark : SYS.paper; c.fillRect(0, 0, w, h)
-          // The SAME coverages the map prints for this step — off the step
-          // table, at the current-map cell. This used to call
-          // sequentialPlates(i/5, 3) with no table (a linear 0.20 floor where
-          // the map's is 0.34) at the 8.4px superseded cell: a legend of a
-          // lighter, coarser map than the one beside it. The chip canvas is
-          // 2x its CSS box, so the cell is doubled to match the map's pixels.
-          const cov = sequentialPlates(i / 5, 3, stepTable())
-          const pl = dark
-            ? [SYS.platesDark!.first, SYS.platesDark!.second, SYS.platesDark!.third]
-            : [SYS.plates!.first, SYS.plates!.second, SYS.plates!.third]
+          c.fillStyle = dark ? sys.paperDark : sys.paper; c.fillRect(0, 0, w, h)
+          const cov = moneyPlates(sys, i / 5, dark)
           // multiply on paper is the nearest canvas mode to the shader's
           // subtractive overprint; lighter at 0.95 IS its additive dark model.
           c.globalCompositeOperation = dark ? "lighter" : "multiply"
@@ -738,12 +741,16 @@ export default function App() {
           A <details> is keyboard- and screen-reader-native; no script. */}
       <details className="colophon">
         <summary>How to read this map</summary>
-        <p><strong>What this is:</strong> money only, across three drums. The
-          tonal range is built the way a three-colour riso builds it — khaki
-          inks up across the bottom of the range, teal lays on across the
-          middle, indigo across the top — so the darkest districts are an{" "}
-          <em>overprint</em> rather than a swatch someone picked. On dark stock
-          the same three drums print as light: umber, sage, ice blue.</p>
+        <p><strong>What this is:</strong> money only, printed with three real
+          Riso drum inks — Yellow, Fluorescent Pink and Medium Blue. Each money
+          step overprints at most two neighbouring drums, the way a riso shop
+          builds a colour: yellow and pink make the oranges and corals at the
+          bottom of the range, pink and blue the violets and indigo at the top.
+          On dark stock the same drums print as light, and the most money
+          glows brightest: plum, magenta, rose, gold, yellow.</p>
+        <p><strong>Senate layer:</strong> printed on its own drums — Aqua,
+          Teal and Burgundy — so it can never be read on the House
+          map&rsquo;s scale.</p>
         <p><strong>What it does not encode:</strong> on the money map, party
           or sector — a district&rsquo;s colour is its total PAC money and
           nothing else. Party is a separate layer you switch to, never mixed

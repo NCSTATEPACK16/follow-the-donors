@@ -296,10 +296,22 @@ const INSTRUMENT = () => {
   };
   const od = P.drawArrays;
   P.drawArrays = function (...a) { window.__draws++; return od.apply(this, a); };
+  // uDrift only, by name. Other vec2 uniforms go up too, and since
+  // 2026-09-27 the press sends each plate's fixed misregistration: a
+  // constant, which is not motion, and counting it here would read as a
+  // second drift value under reduced motion.
   const ou = P.uniform2fv;
   P.uniform2fv = function (loc, v) {
-    try { window.__drifts.add(Array.from(v).map((x) => x.toFixed(4)).join(",")); } catch {}
+    if (loc && loc.__name === "uDrift") {
+      try { window.__drifts.add(Array.from(v).map((x) => x.toFixed(4)).join(",")); } catch {}
+    }
     return ou.apply(this, arguments);
+  };
+  window.__offs = new Set();
+  const o2 = P.uniform2f;
+  P.uniform2f = function (loc, x, y) {
+    if (loc && loc.__name === "uOff") window.__offs.add(`${x.toFixed(3)},${y.toFixed(3)}`);
+    return o2.apply(this, arguments);
   };
 };
 
@@ -325,6 +337,16 @@ async function checkMotion(browser) {
       for (let i = 7; i < d.length; i += 8) seen.add(d[i].toFixed(4));
       return seen.size;
     });
+
+    // The riso texture: plates drawn out of register, by a FIXED offset.
+    // Asserted on the uOff uniform the GPU receives — one distinct value per
+    // plate, never a changing one, and the same set with or without motion.
+    const reg = await pg.evaluate(() => ({
+      multipass: window.__press?.multipass ?? false, offs: [...window.__offs],
+      want: window.__press?.misregistration?.length ?? -1,
+    }));
+    log(reg.multipass && reg.offs.length === reg.want && reg.offs.some((o) => o !== "0.000,0.000"),
+      `app — ${rm}: plates print out of register by a fixed offset (${reg.offs.join(" | ") || "none"}; multipass ${reg.multipass})`);
 
     if (rm === "reduce") {
       log(r.draws === a,
@@ -529,6 +551,45 @@ async function checkPartyLayer(browser, truth) {
   await pg.waitForFunction(() => window.__view?.layer === "house", null, { timeout: 15000 }).catch(() => {});
   log(await pg.evaluate(() => window.__view.layer === "house"), "app — the party layer toggles back off to the money map");
   log(errs.length === 0, `app — party layer: clean console${errs.length ? `\n        ${errs.slice(0, 3).join("\n        ")}` : ""}`);
+  await ctx.close();
+}
+
+/**
+ * The Senate layer prints its OWN inks (inks.ts S). Until 2026-09-27 it
+ * printed on the House drums, so switching layers changed the numbers under
+ * an identical-looking map. Asserted on the uInk uniform the GPU receives,
+ * and on the legend: six printed chips, not the bare totals it used to show.
+ */
+async function checkSenateInks(browser) {
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const pg = await ctx.newPage();
+  await pg.addInitScript(() => {
+    const P = WebGL2RenderingContext.prototype;
+    const ol = P.getUniformLocation;
+    P.getUniformLocation = function (prog, name) {
+      const loc = ol.apply(this, arguments);
+      if (loc) { try { loc.__name = name; } catch {} }
+      return loc;
+    };
+    const o3 = P.uniform3fv;
+    P.uniform3fv = function (loc, v) {
+      if (loc && loc.__name === "uInk") window.__ink = Array.from(v).slice(0, 9).map((x) => x.toFixed(3)).join(",");
+      return o3.apply(this, arguments);
+    };
+  });
+  await pg.goto(url(), { waitUntil: "networkidle", timeout: 30000 });
+  await pg.waitForTimeout(1500);
+  const house = await pg.evaluate(() => window.__ink);
+  await pg.click('button:has-text("Senate layer")');
+  await pg.waitForFunction(() => window.__view?.layer === "senate", null, { timeout: 15000 }).catch(() => {});
+  await pg.waitForTimeout(800);
+  const sen = await pg.evaluate(() => ({
+    ink: window.__ink,
+    chips: document.querySelectorAll(".legend-chip canvas").length,
+  }));
+  log(!!house && !!sen.ink && house !== sen.ink,
+    `app — the Senate layer prints its own inks (house ${house} / senate ${sen.ink})`);
+  log(sen.chips === 6, `app — the Senate legend has six printed chips (${sen.chips})`);
   await ctx.close();
 }
 
@@ -1094,6 +1155,8 @@ console.log("\n— layout —");
 await checkLayout(browser);
 console.log("\n— zoom tiers —");
 await checkZoomTiers(browser);
+console.log("\n— the Senate plate —");
+await checkSenateInks(browser);
 console.log("\n— the party layer —");
 await checkPartyLayer(browser, truth);
 console.log("\n— the keylines —");

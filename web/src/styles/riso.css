@@ -5,7 +5,7 @@
 *, *::before, *::after { box-sizing: border-box; }
 
 :root {
-  --paper: #F6F2E9;
+  --paper: #F8F6F1;
   --ink: #1b1b18;
   --ink-2: #4a4a44;
   --ink-3: #75756c;
@@ -13,6 +13,16 @@
   --key: #24457F;
   --stale: #B34A0C;
   --contested: #6A2FAA;
+  /* The drum inks as page accents (inks.ts D). Pink is never text: it is
+     2.86:1 on this paper, so it only draws rules and marks. Blue is the text
+     accent at 6.54:1. */
+  --riso-yellow: #FFE800;
+  --riso-pink: #FF48B0;
+  --riso-blue: #3255A4;
+  --accent-text: var(--riso-blue);
+  --accent-mark: var(--riso-pink);
+  --accent-fill: var(--riso-blue);
+  --on-accent: #F8F6F1;
   --serif: "Instrument Serif", Georgia, "Times New Roman", serif;
   --sans: "Instrument Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
   --didone: "Bodoni Moda", "Instrument Serif", Georgia, serif;
@@ -34,6 +44,12 @@
      provisional was the hardest to read. These measure 5.98:1 and 6.35:1. */
   --stale: #E07A3A;
   --contested: #A98BE0;
+  /* On black stock the drums print as light; yellow is the brightest and
+     carries text (14.31:1), pink still only marks. */
+  --accent-text: var(--riso-yellow);
+  --accent-mark: var(--riso-pink);
+  --accent-fill: var(--riso-yellow);
+  --on-accent: #17171A;
   color-scheme: dark;
 }
 
@@ -240,7 +256,9 @@ button.ctl:focus-visible { outline: 2px solid var(--key); outline-offset: 2px; }
 }
 .offchip:hover { border-color: var(--ink-2); }
 .offchip:focus-visible { outline: 2px solid var(--key); outline-offset: 2px; }
-.offchip-ink { width: 13px; height: 13px; background: var(--ink); flex: none; }
+/* The swatch has its own property: an inline --ink would recolour the
+   chip's TEXT with the ramp, and a pale Riso step is ~1.2:1 on paper. */
+.offchip-ink { width: 13px; height: 13px; background: var(--chip-ink); flex: none; }
 .offchip-id { font-weight: 600; letter-spacing: .04em; }
 .offchip-amt { font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--ink-3); }
 
@@ -302,6 +320,7 @@ button.ctl:focus-visible { outline: 2px solid var(--key); outline-offset: 2px; }
 
 /* Senate rail. */
 .sen-stats { display: flex; flex-direction: column; gap: 9px; margin-bottom: 14px; }
+.legend-ramp + .sen-stats { margin-top: 16px; }
 .sen-stat { display: flex; flex-direction: column; gap: 1px; }
 .sen-num {
   font: 400 19px/1 var(--mono); font-variant-numeric: tabular-nums;
