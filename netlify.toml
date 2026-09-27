@@ -2,8 +2,10 @@
 # the frontend lives in web/. Netlify only ever builds and serves web/.
 [build]
 base = "web"
-# require-data refuses to build when web/public/data is absent, which it is
-# in any git checkout (it is gitignored). A failed build publishes nothing,
-# so the last good deploy stays live instead of a map that 404s.
-command = "node scripts/require-data.mjs && npm run build"
+# web/public/data is gitignored, so a git checkout has no artifacts.
+# fetch-data downloads the ones scripts/publish_data.sh uploaded to the
+# repo's `data` GitHub Release; require-data then refuses to build if any is
+# missing. A failed build publishes nothing, so the last good deploy stays
+# live instead of a map that 404s.
+command = "node scripts/fetch-data.mjs && node scripts/require-data.mjs && npm run build"
 publish = "dist"

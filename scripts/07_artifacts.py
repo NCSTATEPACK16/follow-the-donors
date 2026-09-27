@@ -50,10 +50,12 @@ MAX_GEO_AREA_SR = 0.1
 #: they still carry real geometry and real money in this artifact.
 EXPECTED_DISTRICTS = 441
 
-#: Districts with exactly one filed incumbent, named as a party. Measured
-#: 2026-09-20 at 414 (2026) and 416 (2024); the floor sits under both
-#: because the filing record moves. A ratchet: raise it, never lower it.
-MIN_NAMED_INCUMBENTS = 400
+#: Districts with exactly one filed incumbent, named as a party. Estimated
+#: from cn.txt 2026-09-20 at 414 (2026) and 416 (2024); the first stage 07
+#: run with this check reproduced both exactly on 2026-09-26. One constant
+#: gates both cycles, so it sits at the lower. A ratchet: raise it, never
+#: lower it.
+MIN_NAMED_INCUMBENTS = 414
 
 
 def mapshaper(*args):
