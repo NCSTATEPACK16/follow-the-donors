@@ -688,6 +688,7 @@ async function checkLayout(browser) {
  *   - Going back restores the national screen, count and chrome.
  */
 const STATE_CASES = [
+  { st: "CA", why: "52 districts, all superseded, Los Angeles ~15px across" },
   { st: "TX", why: "largest delegation, every district superseded" },
   { st: "MD", why: "carries the DC→MD Senate correction; money banked" },
   { st: "PR", why: "territory — cannot be drawn on Albers USA at all" },
@@ -762,13 +763,53 @@ async function checkStateView(browser, truth, senate) {
       `${lab} — ${got.drawn} district(s) drawn, artifact says ${want.n}`);
 
     // The re-screen, asserted on the uniform and then against its own label.
-    log(Math.abs(got.scale - got.wantScale) < 1e-9,
-      `${lab} — re-screened on the GPU (cellScale ${got.scale.toFixed(3)})`);
+    // Since 2026-09-27 the scale is fit per state (view.ts stateScale), so
+    // the uniform is held to its range: never finer than the nation, never
+    // coarser than the old fixed blow-up.
+    log(got.scale >= 1 && got.scale <= got.wantScale + 1e-9,
+      `${lab} — re-screened on the GPU (cellScale ${got.scale.toFixed(3)}, ceiling ${got.wantScale.toFixed(3)})`);
     // One decimal, because GRAIN puts the state cell at 5.6px: rounding both
     // sides to an integer would let a 5.6px label pass over a 6.4px plate.
     const claimed = Number((got.screenLine.match(/at ([\d.]+)px/) ?? [])[1] ?? -1);
     log(claimed.toFixed(1) === got.cellPx.toFixed(1),
       `${lab} — label says ${claimed}px, plate is at ${got.cellPx.toFixed(1)}px`);
+
+    // The legend is screened at the ruling most of the plate prints at —
+    // in an all-superseded state that is the COARSE cell, not the national
+    // current one the chips were once hard-wired to.
+    const chip = await pg.evaluate(() => {
+      const t = document.querySelector(".legend-screen")?.textContent ?? "";
+      return Number((t.match(/at ([\d.]+)px/) ?? [])[1] ?? -1);
+    });
+    const wantChip = (want.stale * 2 > want.n ? "cd119_superseded" : "cd119_current");
+    const wantChipPx = await pg.evaluate((k) => window.__riso.CELL[k] * window.__press.cellScale, wantChip);
+    log(chip.toFixed(1) === wantChipPx.toFixed(1),
+      `${lab} — legend chips screened at ${chip}px, the plate's ${wantChip} ruling is ${wantChipPx.toFixed(1)}px`);
+
+    // The hand zoom: the geometry grows, the screen does not.
+    const z = await pg.evaluate(async () => {
+      const before = window.__press.cellScale;
+      document.querySelector('.zoomctl button[aria-label="Zoom in"]').click();
+      await new Promise((r) => setTimeout(r, 50));
+      return { k: window.__press.view[0], zoomK: window.__zoom?.k ?? -1,
+               hidden: document.querySelector(".zoomctl").hidden,
+               before, after: window.__press.cellScale };
+    });
+    log(!z.hidden && z.k > 1 && Math.abs(z.k - z.zoomK) < 1e-6 && z.before === z.after,
+      `${lab} — zoom in grows the plate (k ${z.k.toFixed(2)}) and holds the screen (${z.before.toFixed(3)} -> ${z.after.toFixed(3)})`);
+    // Pointing still resolves after zooming: the stage centre is inside some
+    // district of this state, and the tooltip names this state.
+    const box = await pg.locator("#lines").boundingBox();
+    await pg.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await pg.waitForTimeout(60);
+    const zt = await pg.evaluate(() => {
+      const e = document.querySelector(".tip");
+      return e && !e.hidden ? e.textContent.trim() : "";
+    });
+    log(zt === "" || zt.startsWith(`${st}-`),
+      `${lab} — hover while zoomed names a ${st} district (${zt.split(" ")[0] || "paper"})`);
+    await pg.evaluate(() => document.querySelector(".zoomctl button:last-of-type").click());
+    await pg.mouse.move(0, 0);
 
     // The money, through the page's own formatter so the comparison is of
     // the NUMBER, not of two spellings of it.

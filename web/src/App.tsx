@@ -12,7 +12,8 @@ import {
 import { createPress, triangulatePlates, type Press } from "./lib/plate"
 import { halftoneRect } from "./lib/screens"
 import {
-  CELL, DISTRICT_SCALE, FLAT_CELL, NATIONAL_SCALE, STATE_SCALE,
+  CELL, DISTRICT_SCALE, FLAT_CELL, MIN_CELLS_ACROSS, NATIONAL_SCALE, STATE_SCALE,
+  dominantCell, stateScale,
   makeDistrictProjection, makeStateProjection, partyChipCoverage,
   districtsOf, stateIndex, quantileBreaks, renderCycleBand, renderPartyLegend,
   renderSenateLegend, renderSenateTable, renderStateBar, renderStatePicker,
@@ -28,6 +29,10 @@ const CYCLE: Cycle = DEFAULT_CYCLE
 /* Three plates, three angles. GLOBAL — one angle per plate for the whole
    sheet, never per district. See plate.ts's header comment. */
 const ANGLES = [SCREEN_ANGLES.color, SCREEN_ANGLES.key, SCREEN_ANGLES.second]
+/** Legend chip size, CSS px. Wide enough to hold a few of the coarsest
+ *  state-plate dots (13px) — at 30x13 a chip printed at the map's own
+ *  ruling held one dot, which keys nothing. three-plate.css matches. */
+const CHIP_W = 44, CHIP_H = 20
 
 /** Three zoom tiers — nation, state, district — each a new plate re-screened
  *  coarser. Three layers — House money, Senate money, and who holds the
@@ -74,6 +79,11 @@ export default function App() {
   const tableRef = useRef<HTMLDivElement>(null)
   const pickerRef = useRef<HTMLSpanElement>(null)
   const perfRef = useRef<HTMLSpanElement>(null)
+  const zoomCtlRef = useRef<HTMLDivElement>(null)
+  const zoomInRef = useRef<HTMLButtonElement>(null)
+  const zoomOutRef = useRef<HTMLButtonElement>(null)
+  const zoomResetRef = useRef<HTMLButtonElement>(null)
+  const zoomLabRef = useRef<HTMLSpanElement>(null)
 
   const themeBtnRef = useRef<HTMLButtonElement>(null)
   const layerBtnRef = useRef<HTMLButtonElement>(null)
@@ -95,7 +105,13 @@ export default function App() {
     /** State outlines for the national border pass. Empty in a state view
      *  and on the Senate layer, where the fill already IS the states. */
     let stateShapes: ProjectedShape<unknown>[] = []
-    let picker: ((x: number, y: number) => number) | null = null
+    let picker: ((x: number, y: number, k?: number) => number) | null = null
+    /** The hand zoom inside a state or district plate: geometry scale k and
+     *  offset (tx, ty) in CSS px. The press applies it in the vertex shader
+     *  and leaves the screen alone, so the dots hold their size while the
+     *  districts grow. Reset whenever the plate changes. */
+    const zoom = { k: 1, tx: 0, ty: 0 }
+    const ZOOM_MAX = 12
     let sel = -1, hov = -1
     /** Where the pointer was last seen and which shape it was over — see
      *  pick(). Cleared on every re-layout: a new plate re-indexes shapes. */
@@ -204,7 +220,8 @@ export default function App() {
           feats = districtsOf(atlas!, view.st!)
           proj = makeStateProjection(feats, W, H)
           offmap = []
-          press!.setCellScale(STATE_SCALE)
+          // Scale is set below, once the shapes are measured: the state's
+          // ruling is fit to its own small districts (view.ts stateScale).
         } else {
           const src = senate
             ? { type: "FeatureCollection" as const, features: atlas!.states!.features }
@@ -229,6 +246,9 @@ export default function App() {
         const encode = senate ? encodeSenate()
           : view.layer === "party" ? encodeParty() : encodeHouse()
         shapes = measure(projectAll({ type: "FeatureCollection", features: feats } as never, proj as never)) as never
+        if (view.mode === "state") press!.setCellScale(stateScale(shapes))
+        zoom.k = 1; zoom.tx = 0; zoom.ty = 0
+        applyZoom()
         mesh = triangulatePlates(feats as never, proj as never, encode as never)
         press!.setMesh(mesh.data, mesh.count)
         ;(window as unknown as { __mesh?: unknown }).__mesh = mesh.data
@@ -261,6 +281,7 @@ export default function App() {
             : null,
           cycle: CYCLE,
           district: view.mode === "district" ? feats[0]?.properties : null,
+          scale: press!.cellScale,
         })
         // Back steps ONE tier: a district returns to its state with the
         // district still selected, a state returns to the nation.
@@ -308,6 +329,10 @@ export default function App() {
         const ctx = el(linesRef).getContext("2d")!
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
         ctx.clearRect(0, 0, W, H)
+        // The keylines follow the hand zoom; their WEIGHT does not — every
+        // width below is divided by k so a line stays a line at any zoom.
+        const k = zoom.k
+        ctx.setTransform(dpr * k, 0, 0, dpr * k, dpr * zoom.tx, dpr * zoom.ty)
         const trace = (s: ProjectedShape<DistrictProperties>) => {
           ctx.beginPath()
           for (const r of s.rings) {
@@ -319,7 +344,7 @@ export default function App() {
         // District hairline. Thinner nationally than before (0.75 -> 0.6)
         // because the state pass below now carries the structure; at 0.75
         // with no hierarchy the Northeast was a knot of equal lines.
-        ctx.lineWidth = view.mode === "state" ? 1.1 : 0.6
+        ctx.lineWidth = (view.mode === "state" ? 1.1 : 0.6) / k
         ctx.lineJoin = "round"
         ctx.strokeStyle = dark ? "rgba(237,237,230,.46)" : "rgba(27,27,24,.56)"
         for (const s of shapes) { trace(s); ctx.stroke() }
@@ -333,9 +358,9 @@ export default function App() {
         // canvas, so the fill stays one validated ink.
         if (view.layer === "party") {
           ctx.save()
-          ctx.lineWidth = view.mode === "national" ? 0.7 : 1
+          ctx.lineWidth = (view.mode === "national" ? 0.7 : 1) / k
           ctx.strokeStyle = dark ? "rgba(237,237,230,.55)" : "rgba(27,27,24,.55)"
-          const gap = view.mode === "national" ? 4 : 7
+          const gap = (view.mode === "national" ? 4 : 7) / k
           for (const s of shapes) {
             if (partyInkOf((s.props as DistrictProperties).incumbent_party) !== "NEUTRAL") continue
             ctx.save(); trace(s); ctx.clip()
@@ -347,16 +372,16 @@ export default function App() {
           ctx.restore()
         }
         if (stateShapes.length) {
-          ctx.lineWidth = 1.6
+          ctx.lineWidth = 1.6 / k
           ctx.strokeStyle = dark ? "rgba(237,237,230,.80)" : "rgba(27,27,24,.84)"
           for (const s of stateShapes) { trace(s as never); ctx.stroke() }
         }
         if (hov >= 0 && hov !== sel) {
-          ctx.lineWidth = 1.8; ctx.strokeStyle = dark ? "#EDEDE6" : "#1b1b18"
+          ctx.lineWidth = 1.8 / k; ctx.strokeStyle = dark ? "#EDEDE6" : "#1b1b18"
           trace(shapes[hov]); ctx.stroke()
         }
         if (sel >= 0) {
-          ctx.lineWidth = 2.4; ctx.strokeStyle = dark ? "#EDEDE6" : "#1b1b18"
+          ctx.lineWidth = 2.4 / k; ctx.strokeStyle = dark ? "#EDEDE6" : "#1b1b18"
           trace(shapes[sel]); ctx.stroke()
         }
       }
@@ -375,13 +400,13 @@ export default function App() {
             const party = chip.dataset.party as "REP" | "DEM" | "NEUTRAL"
             const { ink, cov } = partyChipCoverage(party, Number(chip.dataset.step), dark)
             const cv = document.createElement("canvas")
-            const w = 60, h = 26
+            const w = CHIP_W * 2, h = CHIP_H * 2
             cv.width = w; cv.height = h
             const c = cv.getContext("2d")!
             c.fillStyle = dark ? SYS.paperDark : SYS.paper; c.fillRect(0, 0, w, h)
             c.globalCompositeOperation = dark ? "lighter" : "multiply"
             const slot = party === "REP" ? 0 : party === "DEM" ? 1 : 2
-            halftoneRect(c, 0, 0, w, h, ink, ANGLES[slot], cov, CELL.cd119_current * 2, dark ? 0.95 : 1)
+            halftoneRect(c, 0, 0, w, h, ink, ANGLES[slot], cov, chipCell() * 2, dark ? 0.95 : 1)
             c.globalCompositeOperation = "source-over"
             if (party === "NEUTRAL") {
               // The chip carries the map's hatch too — the legend has to show
@@ -393,6 +418,7 @@ export default function App() {
             }
             chip.innerHTML = ""; chip.appendChild(cv)
           })
+          noteChipScreen(legendEl)
           return
         }
         renderLegend(legendEl, SYS, dark, {
@@ -401,17 +427,62 @@ export default function App() {
           staleLabel: "Superseded — printed coarse; a redraw is in effect and we cannot draw it",
         })
         paintChips(legendEl, SYS)
+        paintVintage(legendEl, SYS)
+      }
+
+      /** The ruling the legend is screened at: the cell most of the plate
+       *  on screen prints at, at this view's screen scale. It used to be the
+       *  national current-map cell everywhere, so a California plate of
+       *  13px superseded dots was keyed by 2.5px chips — two different
+       *  pictures. The hand zoom does not change it: it moves geometry, not
+       *  the screen. */
+      function chipCell(): number {
+        if (view.mode === "national" && view.layer === "senate") {
+          return CELL.cd119_current * press!.cellScale
+        }
+        return dominantCell(shapes.map((s) => s.props as DistrictProperties), press!.cellScale)
+      }
+
+      function noteChipScreen(legendEl: HTMLElement) {
+        const p = document.createElement("p")
+        p.className = "legend-foot legend-screen"
+        p.textContent = `Chips screened at ${chipCell().toFixed(1)}px, the ruling most of this plate prints at.`
+        legendEl.appendChild(p)
+      }
+
+      /** The vintage key, printed at each vintage's OWN cell at this view's
+       *  scale — one mid-tone ink, so the only thing that differs between
+       *  the three marks is the thing they key: how coarse the screen is. */
+      function paintVintage(legendEl: HTMLElement, sys: System) {
+        const ink = platesOf(sys, dark)[1]
+        const status: Record<string, string> = {
+          "lv-current": "cd119_current", "lv-contested": "cd119_contested", "lv-stale": "cd119_superseded",
+        }
+        legendEl.querySelectorAll<HTMLElement>(".lv-mark").forEach((mark) => {
+          const cls = Object.keys(status).find((c) => mark.classList.contains(c))
+          if (!cls) return
+          const cv = document.createElement("canvas")
+          const w = CHIP_W * 2, h = CHIP_H * 2
+          cv.width = w; cv.height = h
+          const c = cv.getContext("2d")!
+          c.fillStyle = dark ? sys.paperDark : sys.paper; c.fillRect(0, 0, w, h)
+          c.globalCompositeOperation = dark ? "lighter" : "multiply"
+          halftoneRect(c, 0, 0, w, h, ink, ANGLES[1], 0.42, CELL[status[cls]] * press!.cellScale * 2, dark ? 0.95 : 1)
+          mark.classList.add("lv-printed")
+          mark.innerHTML = ""; mark.appendChild(cv)
+        })
       }
 
       /** Each legend chip is printed, not filled: the SAME coverages the map
        *  prints for that step (moneyPlates, off the step table and the ink
-       *  path) at the current-map cell, doubled for the 2x chip canvas. A
+       *  path) at chipCell() — the map's own ruling — doubled for the 2x
+       *  chip canvas. A
        *  typed swatch is how the legend once pictured a different map. */
       function paintChips(legendEl: HTMLElement, sys: System) {
         const pl = platesOf(sys, dark)
         legendEl.querySelectorAll(".legend-chip").forEach((chip, i) => {
           const cv = document.createElement("canvas")
-          const w = 60, h = 26
+          const w = CHIP_W * 2, h = CHIP_H * 2
           cv.width = w; cv.height = h
           const c = cv.getContext("2d")!
           c.fillStyle = dark ? sys.paperDark : sys.paper; c.fillRect(0, 0, w, h)
@@ -420,11 +491,12 @@ export default function App() {
           // subtractive overprint; lighter at 0.95 IS its additive dark model.
           c.globalCompositeOperation = dark ? "lighter" : "multiply"
           for (let k = 0; k < 3; k++) {
-            halftoneRect(c, 0, 0, w, h, pl[k], ANGLES[k], cov[k], CELL.cd119_current * 2, dark ? 0.95 : 1)
+            halftoneRect(c, 0, 0, w, h, pl[k], ANGLES[k], cov[k], chipCell() * 2, dark ? 0.95 : 1)
           }
           c.globalCompositeOperation = "source-over"
           chip.innerHTML = ""; chip.appendChild(cv)
         })
+        noteChipScreen(legendEl)
       }
 
       /** Fetches the richer stage-09 page for the selected district and
@@ -502,13 +574,139 @@ export default function App() {
       }
       controllerRef.current = { goToDistrict, goToState }
 
+      /* ---- the hand zoom ------------------------------------------- */
+      /** Push the zoom to the press, the keylines and the controls. Clamped
+       *  so the plate always covers the stage: at k=1 it is exactly the
+       *  fitted state, and no zoom can pan it off the paper. */
+      function applyZoom() {
+        zoom.k = Math.max(1, Math.min(ZOOM_MAX, zoom.k))
+        zoom.tx = Math.min(0, Math.max(W - W * zoom.k, zoom.tx))
+        zoom.ty = Math.min(0, Math.max(H - H * zoom.k, zoom.ty))
+        press?.setView(zoom.k, zoom.tx, zoom.ty)
+        const zoomable = view.mode !== "national"
+        const ctl = el(zoomCtlRef)
+        ctl.hidden = !zoomable
+        el(zoomLabRef).textContent = `${zoom.k < 10 ? zoom.k.toFixed(1) : Math.round(zoom.k)}×`
+        el(zoomOutRef).disabled = zoom.k <= 1
+        el(zoomInRef).disabled = zoom.k >= ZOOM_MAX
+        el(zoomResetRef).disabled = zoom.k <= 1
+        // One finger scrolls the page until the reader has zoomed in; then
+        // it pans the plate. Two fingers always reach the pinch handler,
+        // because pan-x pan-y keeps the browser from claiming the pinch.
+        linesEl.style.touchAction = !zoomable ? "" : zoom.k > 1 ? "none" : "pan-x pan-y"
+        linesEl.style.cursor = zoomable && zoom.k > 1 ? "grab" : ""
+        ;(window as unknown as { __zoom?: unknown }).__zoom = { ...zoom }
+      }
+      /** Zoom by factor f about the stage point (px, py), which stays put. */
+      function zoomAt(f: number, px: number, py: number) {
+        if (view.mode === "national") return
+        const k0 = zoom.k
+        const k1 = Math.max(1, Math.min(ZOOM_MAX, k0 * f))
+        if (k1 === k0) return
+        zoom.tx = px - (px - zoom.tx) * (k1 / k0)
+        zoom.ty = py - (py - zoom.ty) * (k1 / k0)
+        zoom.k = k1
+        applyZoom()
+        lastMove = null
+        press!.draw(); drawLines()
+      }
+
       /* ---- interaction --------------------------------------------- */
       document.body.appendChild(tip)
       const linesEl = el(linesRef)
-      const hit = (e: PointerEvent) => {
+      /** Pointer -> stage CSS px. */
+      const stageXY = (e: { clientX: number; clientY: number }): [number, number] => {
         const r = linesEl.getBoundingClientRect()
-        return picker!((e.clientX - r.left) * (W / r.width), (e.clientY - r.top) * (H / r.height))
+        return [(e.clientX - r.left) * (W / r.width), (e.clientY - r.top) * (H / r.height)]
       }
+      const hit = (e: PointerEvent) => {
+        const [x, y] = stageXY(e)
+        return picker!((x - zoom.tx) / zoom.k, (y - zoom.ty) / zoom.k, zoom.k)
+      }
+
+      /* Ctrl/⌘ + wheel, and a trackpad pinch (which browsers deliver as a
+       * ctrl-wheel), zoom the plate. A plain wheel keeps scrolling the page:
+       * the plate fills the first screen, and a map that eats the scroll
+       * traps the reader above the fold. */
+      const onWheel = (e: WheelEvent) => {
+        if (view.mode === "national" || !(e.ctrlKey || e.metaKey)) return
+        e.preventDefault()
+        const [x, y] = stageXY(e)
+        zoomAt(Math.exp(-e.deltaY * (e.deltaMode === 1 ? 0.05 : 0.0025)), x, y)
+      }
+      linesEl.addEventListener("wheel", onWheel, { passive: false })
+      cleanups.push(() => linesEl.removeEventListener("wheel", onWheel))
+
+      /* Drag to pan once zoomed; two pointers pinch. A drag that moved more
+       * than a few px swallows the click that follows, so panning never
+       * selects the district it happened to end on. */
+      const ptrs = new Map<number, [number, number]>()
+      let dragged = false
+      let downAt: [number, number] = [0, 0]
+      let pinch0: { d: number; k: number } | null = null
+      const onDown = (e: PointerEvent) => {
+        if (view.mode === "national") return
+        ptrs.set(e.pointerId, stageXY(e))
+        downAt = stageXY(e)
+        dragged = false
+        if (ptrs.size === 2) {
+          const [a, b] = [...ptrs.values()]
+          pinch0 = { d: Math.hypot(a[0] - b[0], a[1] - b[1]), k: zoom.k }
+        }
+        if (zoom.k > 1 || ptrs.size === 2) linesEl.setPointerCapture?.(e.pointerId)
+      }
+      const onDrag = (e: PointerEvent) => {
+        const prev = ptrs.get(e.pointerId)
+        if (!prev) return
+        const cur = stageXY(e)
+        ptrs.set(e.pointerId, cur)
+        if (ptrs.size === 2 && pinch0) {
+          const [a, b] = [...ptrs.values()]
+          const d = Math.hypot(a[0] - b[0], a[1] - b[1])
+          if (pinch0.d > 0) zoomAt((pinch0.k * d / pinch0.d) / zoom.k, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
+          dragged = true
+          return
+        }
+        if (zoom.k <= 1) return
+        // Under 4px from where it went down, a pointer is still a click.
+        if (!dragged && Math.hypot(cur[0] - downAt[0], cur[1] - downAt[1]) < 4) return
+        const from = dragged ? prev : downAt
+        dragged = true
+        zoom.tx += cur[0] - from[0]; zoom.ty += cur[1] - from[1]
+        applyZoom()
+        linesEl.style.cursor = "grabbing"
+        tip.hidden = true
+        press!.draw(); drawLines()
+      }
+      const onUp = (e: PointerEvent) => {
+        ptrs.delete(e.pointerId)
+        if (ptrs.size < 2) pinch0 = null
+        if (zoom.k > 1 && view.mode !== "national") linesEl.style.cursor = "grab"
+      }
+      linesEl.addEventListener("pointerdown", onDown)
+      linesEl.addEventListener("pointermove", onDrag)
+      linesEl.addEventListener("pointerup", onUp)
+      linesEl.addEventListener("pointercancel", onUp)
+      cleanups.push(() => {
+        linesEl.removeEventListener("pointerdown", onDown)
+        linesEl.removeEventListener("pointermove", onDrag)
+        linesEl.removeEventListener("pointerup", onUp)
+        linesEl.removeEventListener("pointercancel", onUp)
+      })
+
+      /* The buttons: the keyboard's way in, and the way to know zoom exists.
+       * They zoom about the centre of the stage. */
+      const zc = (f: number) => () => zoomAt(f, W / 2, H / 2)
+      const onZoomIn = zc(1.6), onZoomOut = zc(1 / 1.6)
+      const onZoomReset = () => { zoom.k = 1; zoom.tx = 0; zoom.ty = 0; applyZoom(); press!.draw(); drawLines() }
+      el(zoomInRef).addEventListener("click", onZoomIn)
+      el(zoomOutRef).addEventListener("click", onZoomOut)
+      el(zoomResetRef).addEventListener("click", onZoomReset)
+      cleanups.push(() => {
+        el(zoomInRef).removeEventListener("click", onZoomIn)
+        el(zoomOutRef).removeEventListener("click", onZoomOut)
+        el(zoomResetRef).removeEventListener("click", onZoomReset)
+      })
       linesEl.style.pointerEvents = "auto"
       /* What you point at is what you get — at the pixel ON a border too.
        * pointermove reports FRACTIONAL coordinates; click and dblclick report
@@ -545,6 +743,7 @@ export default function App() {
       }
       const onLeave = () => { hov = -1; lastMove = null; tip.hidden = true; drawLines() }
       const onClick = (e: PointerEvent) => {
+        if (dragged) { dragged = false; return }
         const i = pick(e)
         if (i < 0) return
         const p = shapes[i].props as DistrictProperties & { has_senate?: boolean; state: string }
@@ -561,6 +760,7 @@ export default function App() {
       // selected and its sheet open — which is the sheet you are descending
       // into. goTo re-selects it on the new plate and owns the URL hash last.
       const onDblClick = (e: MouseEvent) => {
+        if (dragged) return
         const i = pick(e)
         if (i < 0) return
         const p = shapes[i].props as DistrictProperties
@@ -711,6 +911,13 @@ export default function App() {
           <div className="stage-inner" ref={innerRef}>
             <canvas id="gl" ref={glRef} role="img" aria-label="" />
             <canvas id="lines" ref={linesRef} aria-hidden="true" />
+            <div className="zoomctl" ref={zoomCtlRef} hidden role="group" aria-label="Zoom the plate">
+              <button className="ctl" ref={zoomInRef} aria-label="Zoom in">+</button>
+              <span className="zoomctl-k" ref={zoomLabRef} aria-live="polite">1.0×</span>
+              <button className="ctl" ref={zoomOutRef} aria-label="Zoom out">−</button>
+              <button className="ctl" ref={zoomResetRef}>Fit</button>
+              <span className="zoomctl-hint">Pinch or Ctrl+scroll · drag to pan</span>
+            </div>
           </div>
           <div className="stage-note"><span id="countline" ref={countlineRef} /></div>
           <div className="offmap" id="offmap" ref={offmapRef} />
@@ -756,13 +963,18 @@ export default function App() {
           nothing else. Party is a separate layer you switch to, never mixed
           into the money.</p>
         <p><strong>Zoom:</strong> a blow-up is a NEW PLATE, re-screened
-          coarser ({CELL.cd119_current.toFixed(1)}px cells nationally,{" "}
-          {(CELL.cd119_current * STATE_SCALE).toFixed(1)}px in a state,{" "}
+          coarser ({CELL.cd119_current.toFixed(1)}px cells nationally; in a
+          state, as coarse as its small districts allow &mdash; a quarter of
+          them must hold {MIN_CELLS_ACROSS} dots across &mdash; up to{" "}
+          {(CELL.cd119_current * STATE_SCALE).toFixed(1)}px;{" "}
           {(CELL.cd119_current * DISTRICT_SCALE).toFixed(1)}px for one
           district), not a camera move over the same one. The certainty ratios
           scale with it, so a superseded district stays{" "}
           {(CELL.cd119_superseded / CELL.cd119_current).toFixed(2)}&times;
-          coarser than a current one at every size.</p>
+          coarser than a current one at every size. Inside a state you can
+          also zoom by hand (pinch, Ctrl+scroll or the buttons): the
+          districts grow and the screen holds its ruling, so a small district
+          fills with more dots rather than bigger ones.</p>
         <p><strong>Zoom by hand:</strong> double-click a state to blow it
           up, and a district inside it to blow that up again. The state list
           and the search box reach the same places from a keyboard.</p>
@@ -771,7 +983,7 @@ export default function App() {
           apart for colour-blind readers. A seat with no single party
           incumbent is gray and hatched, never painted a party.</p>
         <p><strong>Motion:</strong> each district&rsquo;s plates drift a
-          fraction of a pixel out of register on their own clock, the way a
+          fraction of a dot out of register on their own clock, the way a
           real press never quite holds registration. With reduced motion on,
           nothing moves.</p>
         <p>PAC contributions only (FEC transaction types 24K and 24Z).
