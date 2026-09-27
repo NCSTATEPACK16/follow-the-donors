@@ -90,6 +90,12 @@ Each rule names the measurement or incident that produced it. Numbers cite
   `cd119_contested` (enacted then blocked; cd119 still governs), and
   `override_applied`. Reporting a superseded district as current states
   something false about 2 districts in 5.
+  An enacted map is drawn only for the cycles it governs
+  (`_districts.OVERRIDE_CYCLES`, today 2026). 2024 is drawn on cd119, the
+  lines it was contested on, so each cycle has its own `districts_raw_<cycle>`
+  and a 2024 TX-35 is never a 2026 TX-35 relabelled (decided 2026-09-27).
+  `override_applied` and drawing the enacted geometry are one predicate,
+  `draws_override()`; stage 05 checks the label against the pixels.
 
 - **`legal_status` answers which map governs, never whether anyone is suing.**
   Texas, Tennessee and Louisiana are all under active challenge and all three

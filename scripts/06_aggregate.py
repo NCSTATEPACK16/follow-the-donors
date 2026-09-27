@@ -72,7 +72,9 @@ def build_attribution(con, cycle):
                d.district_geoid
         FROM contributions_{cycle} x
         LEFT JOIN cn n ON n.CAND_ID = x.cand_id AND n.cycle = '{cycle}'
-        LEFT JOIN districts d
+        -- This cycle's own district table: 2024 on cd119, 2026 on whatever
+        -- map governs it (see _districts.OVERRIDE_CYCLES).
+        LEFT JOIN districts_{cycle} d
           ON n.CAND_OFFICE = '{A.HOUSE}'
          AND d.state_usps = n.CAND_OFFICE_ST
          AND d.cd = CASE
@@ -95,7 +97,7 @@ def build_outputs(con, cycle):
                count(a.sub_id) AS contributions,
                count(DISTINCT a.cand_id) AS candidates,
                count(DISTINCT a.donor_cmte_id) AS donor_committees
-        FROM districts d
+        FROM districts_{cycle} d
         LEFT JOIN attribution_{cycle} a
                ON a.district_geoid = d.district_geoid AND a.bucket = 'district'
         GROUP BY ALL
@@ -145,8 +147,8 @@ def main():
     os.makedirs(INTERIM, exist_ok=True)
     con = connect()
 
-    if not table_exists(con, "districts"):
-        print("districts table missing — run scripts/05_districts.py first")
+    if not all(table_exists(con, f"districts_{c}") for c in CYCLES):
+        print("districts_<cycle> tables missing — run scripts/05_districts.py first")
         return 1
 
     r = Report("06_aggregate", "Stage 06 — PAC money by congressional district")

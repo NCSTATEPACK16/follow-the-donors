@@ -72,10 +72,20 @@ _ZIP5 = re.compile(r"^\d{5}$")
 Override = namedtuple(
     "Override",
     "state vintage enacted_date legal_status provenance_url geometry_source "
-    "provenance_kind notes")
+    "provenance_kind notes district_field")
 #: Defaults are the conservative reading: an unstated provenance tier is the
 #: weaker one, so a row can only ever understate what we can prove.
-Override.__new__.__defaults__ = (PROVENANCE_DOCUMENTARY, "")
+Override.__new__.__defaults__ = (PROVENANCE_DOCUMENTARY, "", "")
+
+#: The cycles whose election a 2025-26 redraw governs. An override's geometry
+#: is drawn for these and no others: 2024 was contested on cd119, and drawing
+#: 2024 money on a 2026 map would make a 2024 TX-35 and a 2026 TX-35 look like
+#: one place when they are not (user decision, 2026-09-27).
+OVERRIDE_CYCLES = (2026,)
+
+#: What an override's district_field may be called. It is interpolated into
+#: SQL as a quoted identifier, so it is held to a shape that cannot close one.
+_FIELD = re.compile(r"^[A-Za-z_][A-Za-z0-9_ ]{0,62}$")
 
 
 def load_overrides(path=OVERRIDES_CSV):
@@ -108,6 +118,7 @@ def load_overrides(path=OVERRIDES_CSV):
                 provenance_kind=((row.get("provenance_kind") or "").strip()
                                  or PROVENANCE_DOCUMENTARY),
                 notes=(row.get("notes") or "").strip(),
+                district_field=(row.get("district_field") or "").strip(),
             )
             _validate(ov)
             out[state] = ov
@@ -132,21 +143,69 @@ def _validate(ov):
         raise ValueError(
             f"{ov.state}: provenance_kind {ov.provenance_kind!r} is not one "
             f"of {PROVENANCE_KINDS}")
+    if ov.geometry_source and ov.provenance_kind != PROVENANCE_ENACTING:
+        raise ValueError(
+            f"{ov.state}: geometry_source is set but provenance_kind is "
+            f"{ov.provenance_kind!r} — only enacting_authority is good enough "
+            "to DRAW a map from; documentary is good enough to SAY it moved")
+    if ov.geometry_source and not _FIELD.match(ov.district_field):
+        raise ValueError(
+            f"{ov.state}: geometry_source is set, so district_field must name "
+            f"the attribute holding the district number (got "
+            f"{ov.district_field!r}). It is read off the file, never guessed")
 
 
-def map_status(state, overrides):
+def map_status(state, overrides, cycle=None):
     """What to tell a visitor about the districts drawn for this state.
 
     Legal status decides what is operative, never what geometry we happen to
     hold: a blocked map's shapefile sitting on disk must not cause us to draw
     a map that is not the law.
+
+    `cycle` is the plate being drawn. A cycle outside OVERRIDE_CYCLES is drawn
+    on cd119 whatever we hold, so an applied override reads as superseded
+    there — exactly what that cycle said before overrides carried geometry.
+    None means the governing cycle.
     """
     ov = overrides.get((state or "").upper())
     if ov is None:
         return MAP_CURRENT
     if ov.legal_status != STATUS_IN_EFFECT:
         return MAP_CONTESTED
-    return MAP_OVERRIDE_APPLIED if ov.geometry_source else MAP_SUPERSEDED
+    if not ov.geometry_source:
+        return MAP_SUPERSEDED
+    if cycle is not None and int(cycle) not in OVERRIDE_CYCLES:
+        return MAP_SUPERSEDED
+    return MAP_OVERRIDE_APPLIED
+
+
+def draws_override(state, overrides, cycle):
+    """Whether this cycle's plate draws the state's enacted geometry. Defined
+    as map_status() so that the label and the pixels cannot disagree."""
+    return map_status(state, overrides, cycle) == MAP_OVERRIDE_APPLIED
+
+
+_AT_LARGE = re.compile(r"^(?:al|at[- ]?large)$", re.I)
+_CD = re.compile(r"^(?:(?:congressional\s+)?district|cd)?\s*(\d{1,2})$", re.I)
+
+
+def normalise_cd(raw):
+    """A district number as a legislature typed it -> the two-character `cd`.
+
+    "1", "01", 1, "District 1" and "CD 1" are all "01"; "0", "AL" and
+    "At-Large" are "00". Strings and ints only, and no int() cast on the way:
+    a float, a bool or anything the patterns do not read raises, because a
+    guessed number puts money on the wrong seat and passes every count.
+    """
+    if isinstance(raw, bool) or not isinstance(raw, (int, str)):
+        raise ValueError(f"district number {raw!r}: not a string or int")
+    s = str(raw).strip()
+    if _AT_LARGE.match(s):
+        return "00"
+    m = _CD.match(s)
+    if not m:
+        raise ValueError(f"district number {raw!r}: cannot read it")
+    return m.group(1).zfill(2)
 
 
 def zip3_of(zip5):
@@ -230,3 +289,168 @@ def usps_of(statefp):
     a caller holding '6' has already lost the leading zero somewhere upstream
     and should find out rather than be quietly rescued."""
     return STATE_FIPS_USPS.get(statefp)
+
+
+# --- the district layer, per cycle -------------------------------------------
+#
+# SQL, but here rather than in 05_districts: the swap is the rule the tests
+# pin, and `05_districts` is not an importable module name.
+
+def _q(path):
+    """A path as a SQL string literal."""
+    return "'" + str(path).replace("'", "''") + "'"
+
+
+def _crs(con, path):
+    """'AUTH:CODE' off a layer's own metadata, or None. Read, never assumed."""
+    row = con.execute(f"""
+        SELECT layers[1].geometry_fields[1].crs.auth_name,
+               layers[1].geometry_fields[1].crs.auth_code
+        FROM ST_Read_Meta({_q(path)})""").fetchone()
+    return f"{row[0]}:{row[1]}" if row and row[0] and row[1] else None
+
+
+def load_override_geometry(con, ov, statefp, path, cd_crs, expected):
+    """The enacted map for one state, as `override_<ST>` in districts_raw's
+    shape: one dissolved row per seat, `congress = 'override'`.
+
+    Raises on anything that would draw a plausible wrong map: an unknown CRS,
+    a seat count that differs from cd119's (apportionment is fixed until 2032,
+    so that is the wrong file), or two different labels for one seat.
+    """
+    src_crs = _crs(con, path)
+    if not src_crs or not cd_crs:
+        raise ValueError(
+            f"{ov.state}: cannot read the CRS of {path} ({src_crs}) or of "
+            f"cd119 ({cd_crs}); not reprojecting on a guess")
+    field = ov.district_field.replace('"', "")
+    raws = [r for (r,) in con.execute(
+        f'SELECT DISTINCT "{field}" FROM ST_Read({_q(path)})').fetchall()]
+    by_cd = {}
+    for raw in raws:
+        by_cd.setdefault(normalise_cd(raw), []).append(raw)
+    twice = {cd: r for cd, r in by_cd.items() if len(r) > 1}
+    if twice:
+        raise ValueError(
+            f"{ov.state}: the enacted map numbers a seat twice under different "
+            f"labels {twice} — the wrong field, or the wrong file")
+    if len(by_cd) != expected:
+        raise ValueError(
+            f"{ov.state}: the enacted map has {len(by_cd)} districts, cd119 "
+            f"has {expected}. Apportionment is fixed until 2032; this is the "
+            "wrong file, not a new map")
+    con.execute(f"CREATE OR REPLACE TEMP TABLE override_map_{ov.state} "
+                "(raw VARCHAR, cd VARCHAR)")
+    con.executemany(f"INSERT INTO override_map_{ov.state} VALUES (?, ?)",
+                    [(str(raw), cd) for cd, rs in by_cd.items() for raw in rs])
+    geom = "o.geom" if src_crs == cd_crs else \
+        f"ST_Transform(o.geom, '{src_crs}', '{cd_crs}', always_xy := true)"
+    con.execute(f"""
+        CREATE OR REPLACE TEMP TABLE override_{ov.state} AS
+        SELECT '{statefp}' AS statefp, m.cd, '{statefp}' || m.cd AS district_geoid,
+               coalesce(any_value(c.district_name),
+                        'Congressional District ' || m.cd) AS district_name,
+               'override' AS congress,
+               ST_Union_Agg({geom}) AS geom
+        FROM ST_Read({_q(path)}) o
+        JOIN override_map_{ov.state} m ON m.raw = CAST(o."{field}" AS VARCHAR)
+        LEFT JOIN cd119_raw c ON c.district_geoid = '{statefp}' || m.cd
+        GROUP BY m.cd
+    """)
+    return f"override_{ov.state}"
+
+
+def build_districts(con, cd_source, overrides, cycles, override_files):
+    """`districts_raw_<cycle>` and `districts_<cycle>` for every cycle, plus
+    `districts_raw` / `districts` for the governing (latest) one.
+
+    Every cycle starts from cd119. A state is swapped for its enacted map in
+    exactly the cycles where draws_override() says so — the same rule that
+    writes map_status, so a district can never be labelled override_applied
+    and drawn from cd119, or the reverse. Legal status is never re-tested
+    here. The registry is applied in Python for the same reason: a CASE
+    expression duplicating map_status() is the second code path that lets a
+    stale value leak through the one nobody updated.
+
+    `override_files` is {USPS: local path to the enacted geometry}. Returns
+    the set of STATEFPs with no USPS code.
+    """
+    con.execute(f"""
+        CREATE OR REPLACE TABLE cd119_raw AS
+        SELECT STATEFP AS statefp, CD119FP AS cd, GEOID AS district_geoid,
+               NAMELSAD AS district_name, CAST(CDSESSN AS VARCHAR) AS congress,
+               geom
+        FROM ST_Read({_q(cd_source)})
+    """)
+    per_state = dict(con.execute(
+        "SELECT statefp, count(*) FROM cd119_raw GROUP BY 1").fetchall())
+    fips = {usps: fp for fp, usps in STATE_FIPS_USPS.items()}
+    cd_crs = None
+    loaded = {}
+    unmapped = set()
+    for cycle in cycles:
+        raw = f"districts_raw_{cycle}"
+        con.execute(f"CREATE OR REPLACE TABLE {raw} AS SELECT * FROM cd119_raw")
+        for usps in sorted(overrides):
+            if not draws_override(usps, overrides, cycle):
+                continue
+            ov = overrides[usps]
+            path = override_files.get(usps)
+            if not path:
+                raise ValueError(
+                    f"{usps}: override_applied for {cycle} but no enacted "
+                    "geometry file was supplied; refusing to draw cd119 "
+                    "under that label")
+            statefp = fips[usps]
+            if usps not in loaded:
+                if cd_crs is None:
+                    cd_crs = _crs(con, cd_source)
+                loaded[usps] = load_override_geometry(
+                    con, ov, statefp, path, cd_crs, per_state.get(statefp, 0))
+            con.execute(f"DELETE FROM {raw} WHERE statefp = ?", [statefp])
+            con.execute(f"INSERT INTO {raw} SELECT * FROM {loaded[usps]}")
+
+        rows = []
+        for statefp, geoid in con.execute(
+                f"SELECT DISTINCT statefp, district_geoid FROM {raw}").fetchall():
+            usps = usps_of(statefp)
+            if usps is None:
+                unmapped.add(statefp)
+                continue
+            ov = overrides.get(usps)
+            rows.append((
+                geoid, usps, map_status(usps, overrides, cycle),
+                ov.vintage if ov else "cd119 (119th Congress, Census 2025)",
+                ov.enacted_date if ov else None,
+                ov.legal_status if ov else None,
+                ov.provenance_url if ov else None,
+                ov.provenance_kind if ov else None,
+                ov.notes if ov else None,
+            ))
+        con.execute(f"""
+            CREATE OR REPLACE TABLE district_vintage_{cycle} (
+                district_geoid VARCHAR, state_usps VARCHAR, map_status VARCHAR,
+                map_vintage VARCHAR, enacted_date VARCHAR, legal_status VARCHAR,
+                provenance_url VARCHAR, provenance_kind VARCHAR, notes VARCHAR)
+        """)
+        if rows:
+            con.executemany(
+                f"INSERT INTO district_vintage_{cycle} VALUES (?,?,?,?,?,?,?,?,?)",
+                rows)
+        con.execute(f"""
+            CREATE OR REPLACE TABLE districts_{cycle} AS
+            SELECT r.statefp, r.cd, r.district_geoid, r.district_name, r.congress,
+                   v.state_usps, v.map_status, v.map_vintage, v.enacted_date,
+                   v.legal_status, v.provenance_url, v.provenance_kind, v.notes
+            FROM {raw} r
+            JOIN district_vintage_{cycle} v USING (district_geoid)
+        """)
+
+    # The unsuffixed names answer for the map that governs now: the ZIP
+    # crosswalk ("which district is this ZIP in") is a question about today.
+    gov = max(cycles)
+    con.execute(f"CREATE OR REPLACE TABLE districts_raw AS SELECT * FROM districts_raw_{gov}")
+    con.execute(f"CREATE OR REPLACE TABLE districts AS SELECT * FROM districts_{gov}")
+    con.execute(f"CREATE OR REPLACE TABLE district_vintage AS "
+                f"SELECT * FROM district_vintage_{gov}")
+    return unmapped

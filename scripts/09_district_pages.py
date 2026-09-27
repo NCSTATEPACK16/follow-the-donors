@@ -49,13 +49,13 @@ def build_page(con, cycle, geoid):
      candidates, donor_committees) = total
 
     # legal_status and provenance_url live on district_vintage, not
-    # district_totals — 06_aggregate.py never pulled provenance_url through,
-    # and it is cycle-independent (redistricting vintage does not change
-    # cycle to cycle) so joining the registry table directly is correct
-    # rather than a workaround.
-    vintage = con.execute("""
+    # district_totals — 06_aggregate.py never pulled provenance_url through.
+    # Per cycle since v1.2: an override is drawn for 2026 only, so the two
+    # cycles' vintage tables can disagree on map_status (never on these two
+    # registry fields, but reading this cycle's table keeps one source).
+    vintage = con.execute(f"""
         SELECT legal_status, provenance_url
-        FROM district_vintage WHERE district_geoid = ?
+        FROM district_vintage_{cycle} WHERE district_geoid = ?
     """, [geoid]).fetchone()
     legal_status, provenance_url = vintage
 
